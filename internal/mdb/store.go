@@ -8,8 +8,11 @@ import (
 // Store is the interface consumed by API handlers.
 // It abstracts Pool+functions so handlers can be tested without ODBC.
 type Store interface {
-	// Aliases returns all registered database aliases.
+	// Aliases returns all registered database aliases (fast, no I/O).
 	Aliases() []string
+	// Databases returns alias, path, and live connection status for every
+	// registered database. Performs a ping per database; use sparingly.
+	Databases() []DBInfo
 	// ListTables returns user table names for the given alias.
 	ListTables(ctx context.Context, alias string) ([]string, error)
 	// QueryTable runs a filtered, paginated SELECT against tableName.
@@ -35,6 +38,10 @@ func NewPoolStore(pool *Pool) *PoolStore {
 
 func (s *PoolStore) Aliases() []string {
 	return s.pool.Aliases()
+}
+
+func (s *PoolStore) Databases() []DBInfo {
+	return s.pool.Databases()
 }
 
 func (s *PoolStore) ListTables(ctx context.Context, alias string) ([]string, error) {

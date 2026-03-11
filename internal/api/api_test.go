@@ -15,13 +15,25 @@ import (
 
 // mockStore implements mdb.Store for handler tests without ODBC.
 type mockStore struct {
-	aliases []string
-	tables  map[string][]string
-	rows    *mdb.QueryResult
-	err     error
+	aliases   []string
+	databases []mdb.DBInfo // if nil, derived from aliases with status "ok"
+	tables    map[string][]string
+	rows      *mdb.QueryResult
+	err       error
 }
 
 func (m *mockStore) Aliases() []string { return m.aliases }
+
+func (m *mockStore) Databases() []mdb.DBInfo {
+	if m.databases != nil {
+		return m.databases
+	}
+	out := make([]mdb.DBInfo, len(m.aliases))
+	for i, a := range m.aliases {
+		out[i] = mdb.DBInfo{Alias: a, Path: `C:\data\` + a + `.mdb`, Status: "ok"}
+	}
+	return out
+}
 
 func (m *mockStore) ListTables(_ context.Context, alias string) ([]string, error) {
 	if m.err != nil {
@@ -101,9 +113,22 @@ func TestListDatabases(t *testing.T) {
 	if len(dbs) != 2 {
 		t.Errorf("expected 2 databases, got %d", len(dbs))
 	}
-	// Must be sorted.
-	if dbs[0].(string) != "customers" {
-		t.Errorf("databases not sorted: first = %q", dbs[0])
+	// Must be sorted by alias.
+	first := dbs[0].(map[string]interface{})
+	if first["alias"] != "customers" {
+		t.Errorf("databases not sorted: first alias = %q", first["alias"])
+	}
+	// Each entry must have alias, path, status.
+	for _, raw := range dbs {
+		entry := raw.(map[string]interface{})
+		for _, field := range []string{"alias", "path", "status"} {
+			if entry[field] == nil {
+				t.Errorf("database entry missing field %q: %v", field, entry)
+			}
+		}
+		if entry["status"] != "ok" {
+			t.Errorf("expected status ok, got %q", entry["status"])
+		}
 	}
 }
 

@@ -10,13 +10,13 @@ import (
 	"github.com/marcfargas/mdbapi/internal/mdb"
 )
 
-// handleListDatabases returns all registered database aliases.
+// handleListDatabases returns all exposed databases with path and live status.
 // GET /v1/
 func (s *Server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
-	aliases := s.store.Aliases()
-	sort.Strings(aliases)
+	dbs := s.store.Databases()
+	sort.Slice(dbs, func(i, j int) bool { return dbs[i].Alias < dbs[j].Alias })
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"databases": aliases,
+		"databases": dbs,
 	})
 }
 

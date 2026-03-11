@@ -23,16 +23,27 @@ type DBConfig struct {
 	Path  string
 }
 
+// DBInfo is a summary of a registered database returned by the listing endpoint.
+type DBInfo struct {
+	Alias  string `json:"alias"`
+	Path   string `json:"path"`
+	Status string `json:"status"` // "ok" or "error: <message>"
+}
+
 // Pool manages a map of *sql.DB keyed by alias.
 type Pool struct {
-	mu  sync.RWMutex
-	dbs map[string]*sql.DB
+	mu    sync.RWMutex
+	dbs   map[string]*sql.DB
+	paths map[string]string // alias → file path (for listings)
 }
 
 // NewPool opens ODBC connections for all configured databases.
 // All connections use ReadOnly=1 to prevent exclusive locks.
 func NewPool(dbs []DBConfig) (*Pool, error) {
-	p := &Pool{dbs: make(map[string]*sql.DB, len(dbs))}
+	p := &Pool{
+		dbs:   make(map[string]*sql.DB, len(dbs)),
+		paths: make(map[string]string, len(dbs)),
+	}
 	for _, cfg := range dbs {
 		db, err := openDB(cfg.Path)
 		if err != nil {
@@ -41,6 +52,7 @@ func NewPool(dbs []DBConfig) (*Pool, error) {
 			return nil, fmt.Errorf("open database %q (%s): %w", cfg.Alias, cfg.Path, err)
 		}
 		p.dbs[cfg.Alias] = db
+		p.paths[cfg.Alias] = cfg.Path
 	}
 	return p, nil
 }
@@ -63,6 +75,27 @@ func (p *Pool) Aliases() []string {
 	out := make([]string, 0, len(p.dbs))
 	for alias := range p.dbs {
 		out = append(out, alias)
+	}
+	return out
+}
+
+// Databases returns a DBInfo for every registered database, including a live
+// ping to report connection status. Callers should not hold the result for long;
+// status reflects the instant the method was called.
+func (p *Pool) Databases() []DBInfo {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := make([]DBInfo, 0, len(p.dbs))
+	for alias, db := range p.dbs {
+		info := DBInfo{
+			Alias:  alias,
+			Path:   p.paths[alias],
+			Status: "ok",
+		}
+		if err := db.Ping(); err != nil {
+			info.Status = "error: " + err.Error()
+		}
+		out = append(out, info)
 	}
 	return out
 }
