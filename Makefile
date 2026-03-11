@@ -1,6 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS  = -s -w -X main.Version=$(VERSION)
 OUTDIR   = dist
+CGO_ENABLED ?= 0
 
 # Primary target: windows/amd64 (runs on x64 and ARM via emulation)
 build-amd64:
@@ -28,17 +29,29 @@ build-probe:
 
 build-all: build-amd64 build-arm64 build-amd64-tsnet build-probe
 
-# Unit tests (no ODBC required)
+# Unit tests (no ODBC required — runs on any platform)
 test:
-	go test ./... -short
+	CGO_ENABLED=$(CGO_ENABLED) go test ./... -short -count=1
 
-# Integration tests (requires Windows with Access ODBC driver installed)
+# Integration tests (requires Windows with 64-bit ACE driver installed)
 test-integration:
-	go test ./... -run Integration -v -tags integration
+	go test ./... -run Integration -v -tags integration -count=1
 
-# Vet + staticcheck
+# Vet
 lint:
 	go vet ./...
+
+# GoReleaser dry-run (does not publish; requires goreleaser installed)
+release-dry:
+	goreleaser release --snapshot --clean
+
+# Tag and push to trigger the release workflow
+# Usage: make release VERSION=v0.1.0
+release:
+	@test -n "$(VERSION)" || (echo "usage: make release VERSION=v0.1.0" && exit 1)
+	git tag -a $(VERSION) -m "Release $(VERSION)"
+	git push origin $(VERSION)
+	@echo "Release $(VERSION) pushed — GitHub Actions will build and publish."
 
 clean:
 	rm -rf $(OUTDIR)
@@ -49,4 +62,4 @@ $(OUTDIR):
 build-amd64 build-arm64 build-amd64-tsnet build-arm64-tsnet build-probe build-all: | $(OUTDIR)
 
 .PHONY: build-amd64 build-arm64 build-amd64-tsnet build-arm64-tsnet build-probe \
-        build-all test test-integration lint clean
+        build-all test test-integration lint release-dry release clean

@@ -66,6 +66,7 @@ func main() {
 }
 
 // runCmd starts the service in console (foreground) mode.
+// When started by the SCM, it also uses this path (with -config argument).
 func runCmd(args []string) {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	cfgPath := fs.String("config", defaultConfigPath(), "path to config file")
@@ -74,6 +75,15 @@ func runCmd(args []string) {
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
 		fatalf("config: %v", err)
+	}
+
+	// When log_file is set (service mode), redirect slog to rotating file.
+	// In foreground dev mode, leave as stderr (log_file defaults to path but
+	// the operator can clear it for interactive use).
+	if !service.Interactive() {
+		if err := winservice.SetupLogging(cfg.Service.LogFile); err != nil {
+			fatalf("setup logging: %v", err)
+		}
 	}
 
 	prg := winservice.NewProgram(cfg, Version)
@@ -102,15 +112,15 @@ func installCmd(args []string) {
 	svcCfg := serviceConfig(cfg)
 	svcCfg.Arguments = []string{"run", "-config", *cfgPath}
 
-	svc, err := service.New(prg, svcCfg)
-	if err != nil {
-		fatalf("service init: %v", err)
-	}
-	if err := winservice.Install(svc, cfg.Service.Name); err != nil {
+	if err := winservice.Install(svcCfg, prg, cfg.Service.Name); err != nil {
 		fatalf("install: %v", err)
 	}
-	fmt.Printf("Service %q installed successfully.\n", cfg.Service.Name)
-	fmt.Println("Run: mdbapi start")
+	fmt.Printf("Service %q installed.\n", cfg.Service.Name)
+	fmt.Printf("Account:  NT SERVICE\\%s\n", cfg.Service.Name)
+	fmt.Printf("Log file: %s\n", cfg.Service.LogFile)
+	fmt.Println("\nNext steps:")
+	fmt.Printf("  mdbapi fixacl        # restrict config dir ACLs\n")
+	fmt.Printf("  mdbapi start         # start the service\n")
 }
 
 // lifecycleCmd handles uninstall/start/stop.
@@ -242,6 +252,9 @@ func serviceConfig(cfg *config.Config) *service.Config {
 		Name:        cfg.Service.Name,
 		DisplayName: cfg.Service.DisplayName,
 		Description: cfg.Service.Description,
+		// Run as a virtual NT SERVICE account — no password, minimal privileges.
+		// Windows creates this account automatically on service install.
+		UserName: `NT SERVICE\` + cfg.Service.Name,
 	}
 }
 

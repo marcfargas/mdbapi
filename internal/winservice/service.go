@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/kardianos/service"
@@ -19,6 +20,7 @@ import (
 	"github.com/marcfargas/mdbapi/internal/tunnel"
 	"github.com/marcfargas/mdbapi/internal/updater"
 	"golang.org/x/sys/windows/svc/mgr"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Program implements kardianos/service.Interface.
@@ -27,12 +29,11 @@ type Program struct {
 	version string
 
 	// set during Start
-	pool      *mdb.Pool
-	server    *api.Server
-	httpSrv   *http.Server
-	tunProv   tunnel.Provider
-	cancelCtx context.CancelFunc
-
+	pool          *mdb.Pool
+	server        *api.Server
+	httpSrv       *http.Server
+	tunProv       tunnel.Provider
+	cancelCtx     context.CancelFunc
 	restartSignal chan struct{}
 }
 
@@ -52,7 +53,7 @@ func (p *Program) Start(s service.Service) error {
 	return nil
 }
 
-// Stop is called by the SCM on stop/shutdown. Must not block longer than timeout.
+// Stop is called by the SCM on stop/shutdown.
 func (p *Program) Stop(_ service.Service) error {
 	slog.Info("service stopping")
 	if p.cancelCtx != nil {
@@ -73,12 +74,16 @@ func (p *Program) Stop(_ service.Service) error {
 	if p.tunProv != nil {
 		_ = p.tunProv.Close()
 	}
+	slog.Info("service stopped")
 	return nil
 }
 
 func (p *Program) run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	p.cancelCtx = cancel
+
+	// 0. Clean up any stale .old binary from a previous auto-update.
+	cleanupOldBinary()
 
 	// 1. Open database connections.
 	dbCfgs := make([]mdb.DBConfig, len(p.cfg.Databases))
@@ -91,7 +96,7 @@ func (p *Program) run() error {
 	}
 	p.pool = pool
 
-	// 2. Create HTTP server.
+	// 2. Build HTTP server via Store interface.
 	store := mdb.NewPoolStore(pool)
 	p.server = api.NewServer(store, p.cfg.API.MaxRows, p.version)
 	handler := p.server.Handler(p.cfg.Auth.Keys, p.cfg.Server.MaxBodySize)
@@ -114,7 +119,6 @@ func (p *Program) run() error {
 		WriteTimeout: p.cfg.Server.WriteTimeout,
 	}
 
-	// 4. TLS if configured.
 	slog.Info("service started",
 		"listen", listenAddr(ln),
 		"databases", len(p.cfg.Databases),
@@ -122,7 +126,7 @@ func (p *Program) run() error {
 		"version", p.version,
 	)
 
-	// 5. Start updater if enabled.
+	// 4. Start auto-updater if enabled.
 	p.restartSignal = make(chan struct{})
 	if p.cfg.Updater.Enabled {
 		u := updater.New(
@@ -134,23 +138,31 @@ func (p *Program) run() error {
 		)
 		go u.Start(ctx)
 
-		// Watch for restart signal — graceful shutdown before SCM restarts us.
 		go func() {
 			select {
 			case <-p.restartSignal:
-				slog.Info("updater restart signal received, stopping service")
+				slog.Info("auto-update complete, restarting via SCM")
 				_ = p.Stop(nil)
-				os.Exit(1) // SCM recovery action restarts with new binary
+				os.Exit(1) // SCM recovery action restarts with new binary after 5s
 			case <-ctx.Done():
 			}
 		}()
 	}
 
-	// 6. Serve — blocks until Shutdown is called.
+	// 5. Serve — blocks until Shutdown is called.
 	if p.cfg.Server.TLSCert != "" && p.cfg.Server.TLSKey != "" {
-		return p.httpSrv.ServeTLS(ln, p.cfg.Server.TLSCert, p.cfg.Server.TLSKey)
+		slog.Info("TLS enabled", "cert", p.cfg.Server.TLSCert)
+		return filterServeError(p.httpSrv.ServeTLS(ln, p.cfg.Server.TLSCert, p.cfg.Server.TLSKey))
 	}
-	return p.httpSrv.Serve(ln)
+	return filterServeError(p.httpSrv.Serve(ln))
+}
+
+// filterServeError suppresses http.ErrServerClosed which is the normal shutdown path.
+func filterServeError(err error) error {
+	if err == http.ErrServerClosed {
+		return nil
+	}
+	return err
 }
 
 func listenAddr(ln net.Listener) string {
@@ -160,17 +172,60 @@ func listenAddr(ln net.Listener) string {
 	return ln.Addr().String()
 }
 
-// Install creates the Windows service entry and configures SCM recovery actions.
-// kardianos/service creates the service; we then add recovery actions via x/sys/windows.
-func Install(svc service.Service, svcName string) error {
+// cleanupOldBinary removes the stale .old backup left by a previous auto-update.
+// The file may still be locked if the previous restart was very recent; errors are ignored.
+func cleanupOldBinary() {
+	exe, err := os.Executable()
+	if err != nil {
+		return
+	}
+	old := exe + ".old"
+	if _, err := os.Stat(old); err == nil {
+		if err := os.Remove(old); err != nil {
+			slog.Debug("could not remove stale backup binary (may still be locked)", "path", old, "err", err)
+		} else {
+			slog.Info("removed stale backup binary", "path", old)
+		}
+	}
+}
+
+// SetupLogging configures slog to write to the configured log file with rotation.
+// Call this before starting the service loop.
+func SetupLogging(logFile string) error {
+	if logFile == "" {
+		return nil // keep default stderr
+	}
+	if err := os.MkdirAll(filepath.Dir(logFile), 0700); err != nil {
+		return fmt.Errorf("create log directory: %w", err)
+	}
+	w := &lumberjack.Logger{
+		Filename:   logFile,
+		MaxSize:    50,  // MB
+		MaxBackups: 5,
+		MaxAge:     30,  // days
+		Compress:   true,
+	}
+	slog.SetDefault(slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+	return nil
+}
+
+// Install creates the Windows service and configures SCM recovery actions.
+// The service runs as NT SERVICE\<name> — a virtual account with minimal permissions.
+func Install(svcCfg *service.Config, prg service.Interface, svcName string) error {
+	svc, err := service.New(prg, svcCfg)
+	if err != nil {
+		return fmt.Errorf("create service: %w", err)
+	}
 	if err := svc.Install(); err != nil {
 		return fmt.Errorf("install service: %w", err)
 	}
 	return configureRecovery(svcName)
 }
 
-// configureRecovery sets SCM recovery actions so the service restarts on failure
-// (including clean exit(1) from the updater).
+// configureRecovery sets SCM recovery actions so the service restarts on any failure,
+// including a clean os.Exit(1) from the auto-updater.
 func configureRecovery(svcName string) error {
 	m, err := mgr.Connect()
 	if err != nil {
@@ -180,7 +235,7 @@ func configureRecovery(svcName string) error {
 
 	s, err := m.OpenService(svcName)
 	if err != nil {
-		return fmt.Errorf("open service %q: %w", svcName, err)
+		return fmt.Errorf("open service %q in SCM: %w", svcName, err)
 	}
 	defer s.Close()
 
@@ -189,14 +244,12 @@ func configureRecovery(svcName string) error {
 		{Type: mgr.ServiceRestart, Delay: 5 * time.Second},
 		{Type: mgr.ServiceRestart, Delay: 30 * time.Second},
 	}
-	resetPeriod := uint32((1 * time.Hour).Seconds())
-	if err := s.SetRecoveryActions(actions, resetPeriod); err != nil {
+	if err := s.SetRecoveryActions(actions, uint32((time.Hour).Seconds())); err != nil {
 		return fmt.Errorf("set recovery actions: %w", err)
 	}
-
-	// CRITICAL: enable recovery on non-crash exits too (exit code 1 from updater).
+	// CRITICAL: without this, os.Exit(1) does NOT trigger recovery — only crashes do.
 	if err := s.SetRecoveryActionsOnNonCrashFailures(true); err != nil {
-		return fmt.Errorf("set recovery on non-crash failures: %w", err)
+		return fmt.Errorf("enable recovery on non-crash exit: %w", err)
 	}
 	return nil
 }
