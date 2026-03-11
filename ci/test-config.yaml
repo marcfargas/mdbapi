@@ -1,0 +1,10 @@
+service:
+  name: MDBRestService
+  display_name: MDB REST Service
+  description: Read-only REST API for Access databases
+auth:
+  keys:
+    - "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+databases:
+  - alias: test
+    path: 'C:\data\test.mdb'

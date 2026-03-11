@@ -90,18 +90,7 @@ jobs:
         run: |
           $cfgDir = 'C:\ProgramData\MDBService'
           New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
-          @'
-service:
-  name: MDBRestService
-  display_name: MDB REST Service
-  description: Read-only REST API for Access databases
-auth:
-  keys:
-    - "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-databases:
-  - alias: test
-    path: 'C:\data\test.mdb'
-'@ | Out-File "$cfgDir\config.yaml" -Encoding utf8
+          Copy-Item ci\test-config.yaml "$cfgDir\config.yaml"
 
           Write-Host "--- install ---"
           & dist\mdbapi.exe install -config "$cfgDir\config.yaml"
