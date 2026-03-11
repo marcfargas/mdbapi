@@ -12,3 +12,6 @@ tsnet-state/
 # IDE
 .vscode/
 .idea/
+
+# Test data — not committed; see scripts/fetch-testdata.sh
+testdata/

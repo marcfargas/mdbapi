@@ -13,8 +13,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-go@v5
         with:
@@ -32,8 +30,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-go@v5
         with:
@@ -41,13 +37,13 @@ jobs:
           cache: true
 
       - name: Build windows/amd64
-        run: GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" ./...
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" ./...
 
       - name: Build windows/amd64 (tsnet)
-        run: GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" ./...
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" ./...
 
       - name: Build windows/arm64
-        run: GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" ./...
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" ./...
 
   integration:
     name: Integration Tests (ODBC)
@@ -56,13 +52,18 @@ jobs:
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
           cache: true
+
+      # Test data lives in a separate repo (no license on the files).
+      # We clone it fresh at CI time — never committed to this repo.
+      - name: Fetch test data
+        shell: pwsh
+        run: |
+          git clone --depth 1 https://github.com/marcfargas/mdbtestdata testdata
 
       - name: Install Access Database Engine (64-bit)
         shell: pwsh
@@ -72,7 +73,8 @@ jobs:
           Start-Process ace64.exe -ArgumentList "/quiet" -Wait -NoNewWindow
 
       - name: Build probe tool
-        run: GOOS=windows GOARCH=amd64 go build -o probe.exe ./cmd/probe
+        shell: pwsh
+        run: go build -o probe.exe ./cmd/probe
 
       - name: Run ODBC probe against testdata
         shell: pwsh
