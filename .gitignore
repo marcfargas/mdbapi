@@ -1,0 +1,14 @@
+dist/
+*.exe
+*.log
+*.ldb
+*.laccdb
+config.yaml
+.env
+
+# tsnet state
+tsnet-state/
+
+# IDE
+.vscode/
+.idea/

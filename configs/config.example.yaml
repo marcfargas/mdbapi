@@ -1,0 +1,55 @@
+service:
+  name: "MDBRestService"
+  display_name: "MDB REST API Service"
+  description: "Exposes Access MDB/ACCDB files via a read-only REST API"
+  log_file: 'C:\ProgramData\MDBService\mdbapi.log'
+
+server:
+  listen: "127.0.0.1:8080"
+  read_timeout: 30s
+  write_timeout: 30s
+  max_body_size: 1048576  # 1 MB
+
+  # TLS for LAN access (optional). Leave empty for localhost-only use.
+  # tls_cert: 'C:\ProgramData\MDBService\server.crt'
+  # tls_key:  'C:\ProgramData\MDBService\server.key'
+
+# API keys for authentication.
+# - Use ${ENV_VAR} to inject from environment (recommended).
+# - Minimum 32 characters. Generate with: mdbapi keygen
+# - Multiple keys allow zero-downtime rotation.
+# - Set ACLs on this file: mdbapi fixacl
+auth:
+  keys:
+    - "${MDBAPI_KEY}"
+    # - "${MDBAPI_KEY_OLD}"  # remove after rotation
+
+databases:
+  - alias: "inventory"
+    path: 'C:\Data\Inventory.mdb'
+
+  # - alias: "customers"
+  #   path: 'C:\Data\Customers.accdb'
+
+# Tunnel configuration.
+# provider: none   — local listener only (default). Recommended for production.
+#                    Use Cloudflare Tunnel or a reverse proxy for internet exposure.
+# provider: tsnet  — embedded Tailscale node. Requires -tags tsnet build.
+#                    Funnel=true for public internet access; false for tailnet-only.
+tunnel:
+  provider: none
+
+  # tsnet:
+  #   hostname: "mdb-service"
+  #   auth_key: "${TS_AUTHKEY}"       # pre-auth key from tailscale.com/admin
+  #   state_dir: 'C:\ProgramData\MDBService\tsnet'
+  #   funnel: false
+
+updater:
+  enabled: true
+  github_repo: "marcfargas/mdbapi"
+  check_interval: 1h
+  github_token: "${GITHUB_TOKEN}"   # optional; avoids 60 req/h unauthenticated rate limit
+
+api:
+  max_rows: 1000   # hard cap on rows returned per request (applies to all endpoints)
