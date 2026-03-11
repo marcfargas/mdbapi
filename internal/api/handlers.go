@@ -118,6 +118,34 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
+// handleHealth returns service and database health for liveness/readiness probes.
+// GET /v1/health
+func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
+	dbs := s.store.Databases()
+	total := len(dbs)
+	okCount := 0
+	for _, db := range dbs {
+		if db.Status == "ok" {
+			okCount++
+		}
+	}
+	errorCount := total - okCount
+	status := "ok"
+	if errorCount > 0 {
+		status = "degraded"
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"status":  status,
+		"version": s.version,
+		"databases": map[string]int{
+			"total": total,
+			"ok":    okCount,
+			"error": errorCount,
+		},
+	})
+}
+
 // isNotFound returns true for errors that should map to HTTP 404.
 func isNotFound(err error) bool {
 	var unknownAlias mdb.ErrUnknownAlias

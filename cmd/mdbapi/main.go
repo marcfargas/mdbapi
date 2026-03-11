@@ -234,15 +234,24 @@ func keygenCmd(args []string) {
 func fixaclCmd(args []string) {
 	fs := flag.NewFlagSet("fixacl", flag.ExitOnError)
 	dir := fs.String("dir", filepath.Dir(defaultConfigPath()), "directory to secure")
+	cfg := fs.String("config", defaultConfigPath(), "path to config (for service name)")
 	_ = fs.Parse(args)
 
-	if err := winservice.FixACL(*dir); err != nil {
+	// Read service name from config so we can grant the correct virtual account.
+	// Fall back to the default name if config can't be loaded.
+	svcName := "MDBRestService"
+	if c, err := config.Load(*cfg); err == nil {
+		svcName = c.Service.Name
+	}
+
+	if err := winservice.FixACL(*dir, svcName); err != nil {
 		fatalf("fixacl: %v", err)
 	}
 	fmt.Printf("✓ ACLs set on %s\n", *dir)
-	fmt.Println("  SYSTEM: Full Control")
-	fmt.Println("  Administrators: Full Control")
-	fmt.Println("  Users: (none)")
+	fmt.Println("  SYSTEM:                          Full Control")
+	fmt.Println("  Administrators:                  Full Control")
+	fmt.Printf("  NT SERVICE\\%s:  Read & Execute\n", svcName)
+	fmt.Println("  Everyone / Users:                (none)")
 }
 
 // --- helpers ---

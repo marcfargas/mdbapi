@@ -27,18 +27,24 @@ func NewServer(store mdb.Store, maxRows int, version string) *Server {
 
 // Handler builds and returns the root http.Handler with all middleware applied.
 func (s *Server) Handler(keys []string, maxBodyBytes int64) http.Handler {
-	mux := http.NewServeMux()
+	// Inner mux: auth-protected API routes.
+	inner := http.NewServeMux()
+	inner.HandleFunc("GET /v1/{$}", s.handleListDatabases)
+	inner.HandleFunc("GET /v1/version", s.handleVersion)
+	inner.HandleFunc("GET /v1/{db}/tables", s.handleListTables)
+	inner.HandleFunc("GET /v1/{db}/{table}", s.handleQueryTable)
+	inner.HandleFunc("POST /v1/{db}/query", s.handleExecuteSQL)
 
-	// Exact root match returns database list.
-	mux.HandleFunc("GET /v1/{$}", s.handleListDatabases)
-	mux.HandleFunc("GET /v1/version", s.handleVersion)
-	mux.HandleFunc("GET /v1/{db}/tables", s.handleListTables)
-	mux.HandleFunc("GET /v1/{db}/{table}", s.handleQueryTable)
-	mux.HandleFunc("POST /v1/{db}/query", s.handleExecuteSQL)
+	var protected http.Handler = inner
+	protected = authMiddleware(keys, authFailDelay, protected)
+	protected = maxBodyMiddleware(maxBodyBytes, protected)
 
-	var h http.Handler = mux
-	h = authMiddleware(keys, authFailDelay, h)
-	h = maxBodyMiddleware(maxBodyBytes, h)
+	// Outer mux: public health route + protected API.
+	outer := http.NewServeMux()
+	outer.HandleFunc("GET /v1/health", s.handleHealth)
+	outer.Handle("/", protected)
+
+	var h http.Handler = outer
 	h = loggingMiddleware(h)
 	h = recoveryMiddleware(h)
 	return h

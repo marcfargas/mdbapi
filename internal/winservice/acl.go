@@ -11,28 +11,35 @@ import (
 // FixACL sets restrictive Windows ACLs on dir:
 //   - SYSTEM: Full Control
 //   - Administrators: Full Control
-//   - Users: (no access)
+//   - NT SERVICE\<svcName>: Read & Execute (so the service can read its config)
+//   - Everyone / Users / Authenticated Users: removed
 //
-// This prevents local users from reading the config file and API keys.
-// It uses icacls.exe which is available on all supported Windows versions.
-func FixACL(dir string) error {
+// svcName is the Windows service name (e.g. "MDBRestService").
+// NT SERVICE virtual accounts are created automatically by the SCM when the
+// service first starts — no manual account creation is required.
+//
+// FixACL uses icacls.exe, available on all supported Windows versions.
+func FixACL(dir, svcName string) error {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("create directory %q: %w", dir, err)
 		}
 	}
 
-	// Remove all inherited and explicit ACEs, then set explicit grants.
+	virtualAccount := `NT SERVICE\` + svcName
+
 	cmds := [][]string{
 		// Disable inheritance and remove inherited ACEs.
 		{"icacls", dir, "/inheritance:d"},
-		// Remove all existing explicit ACEs.
+		// Remove broad grants.
 		{"icacls", dir, "/remove:g", "Everyone"},
 		{"icacls", dir, "/remove:g", "Users"},
 		{"icacls", dir, "/remove:g", "Authenticated Users"},
-		// Grant SYSTEM and Administrators.
+		// SYSTEM and Administrators: full control.
 		{"icacls", dir, "/grant", "SYSTEM:(OI)(CI)F"},
 		{"icacls", dir, "/grant", "Administrators:(OI)(CI)F"},
+		// Service virtual account: read & execute (config + log, no write).
+		{"icacls", dir, "/grant", virtualAccount + ":(OI)(CI)RX"},
 	}
 
 	for _, args := range cmds {

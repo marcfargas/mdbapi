@@ -14,7 +14,7 @@ env:
 #   test ──┐
 #           ├──► integration   (windows-latest, no Go needed)
 #   build ──┘
-#     └── uploads windows-amd64 artifact (mdbapi.exe + probe.exe)
+#     └── uploads windows-amd64 artifact (mdbapi.exe + probe.exe + integration.exe)
 
 jobs:
   test:
@@ -51,6 +51,8 @@ jobs:
             -o dist/mdbapi.exe ./cmd/mdbapi
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" \
             -o dist/probe.exe  ./cmd/probe
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" \
+            -o dist/integration.exe ./cmd/integration
 
       - name: Build windows/amd64 (tsnet)
         run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" ./cmd/mdbapi
@@ -110,8 +112,8 @@ jobs:
 
           Write-Host "Service installer test PASSED"
 
-      - name: Test -- ODBC probe
+      - name: Test -- ODBC integration
         shell: pwsh
         run: |
-          & dist\probe.exe -dir testdata
-          if ($LASTEXITCODE -ne 0) { throw "ODBC probe failed ($LASTEXITCODE)" }
+          & dist\integration.exe -dir testdata
+          if ($LASTEXITCODE -ne 0) { throw "Integration tests failed" }

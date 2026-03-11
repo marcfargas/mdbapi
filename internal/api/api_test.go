@@ -303,6 +303,82 @@ func TestVersion(t *testing.T) {
 	}
 }
 
+func TestHealth_NoAuth(t *testing.T) {
+	t.Run("all databases ok", func(t *testing.T) {
+		store := &mockStore{databases: []mdb.DBInfo{
+			{Alias: "db1", Path: `C:\data\db1.mdb`, Status: "ok"},
+			{Alias: "db2", Path: `C:\data\db2.mdb`, Status: "ok"},
+		}}
+		h := newTestServer(store)
+
+		req := httptest.NewRequest("GET", "/v1/health", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+		}
+
+		var body map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("invalid json response: %v", err)
+		}
+		data := body["data"].(map[string]interface{})
+		if data["status"] != "ok" {
+			t.Errorf("status = %v, want ok", data["status"])
+		}
+		if data["version"] != "test" {
+			t.Errorf("version = %v, want test", data["version"])
+		}
+		dbSummary := data["databases"].(map[string]interface{})
+		if dbSummary["total"].(float64) != 2 {
+			t.Errorf("databases.total = %v, want 2", dbSummary["total"])
+		}
+		if dbSummary["ok"].(float64) != 2 {
+			t.Errorf("databases.ok = %v, want 2", dbSummary["ok"])
+		}
+		if dbSummary["error"].(float64) != 0 {
+			t.Errorf("databases.error = %v, want 0", dbSummary["error"])
+		}
+	})
+
+	t.Run("degraded when any database has non-ok status", func(t *testing.T) {
+		store := &mockStore{databases: []mdb.DBInfo{
+			{Alias: "db1", Path: `C:\data\db1.mdb`, Status: "ok"},
+			{Alias: "db2", Path: `C:\data\db2.mdb`, Status: "error: timeout"},
+			{Alias: "db3", Path: `C:\data\db3.mdb`, Status: "ok"},
+		}}
+		h := newTestServer(store)
+
+		req := httptest.NewRequest("GET", "/v1/health", nil)
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+		}
+
+		var body map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("invalid json response: %v", err)
+		}
+		data := body["data"].(map[string]interface{})
+		if data["status"] != "degraded" {
+			t.Errorf("status = %v, want degraded", data["status"])
+		}
+		dbSummary := data["databases"].(map[string]interface{})
+		if dbSummary["total"].(float64) != 3 {
+			t.Errorf("databases.total = %v, want 3", dbSummary["total"])
+		}
+		if dbSummary["ok"].(float64) != 2 {
+			t.Errorf("databases.ok = %v, want 2", dbSummary["ok"])
+		}
+		if dbSummary["error"].(float64) != 1 {
+			t.Errorf("databases.error = %v, want 1", dbSummary["error"])
+		}
+	})
+}
+
 func TestXAPIKeyHeader(t *testing.T) {
 	store := &mockStore{aliases: []string{}}
 	h := newTestServer(store)

@@ -6,7 +6,8 @@ A self-contained Windows service that exposes Microsoft Access databases (`.mdb`
 
 ## Features
 
-- **4 clean endpoints** — list databases, list tables, query rows, SQL passthrough
+- **5 clean endpoints** — health, list databases, list tables, query rows, SQL passthrough
+- **Glob database config** — expose entire directories with `*.mdb` / `**\*.mdb` patterns
 - **Read-only by design** — `ReadOnly=1` in ODBC connection string + SELECT-only enforcement
 - **Multi-key auth** — zero-downtime key rotation without service restart
 - **Auto-update** — checks GitHub Releases hourly, replaces binary, restarts via SCM
@@ -48,61 +49,72 @@ New-Item -ItemType Directory -Path "C:\ProgramData\MDBService" -Force
 
 ## API Reference
 
-All endpoints require authentication via:
-- `Authorization: Bearer <key>` header, or
-- `X-API-Key: <key>` header
+All responses use a JSON envelope:
+- Success: `{"data": {...}}`
+- Error: `{"error": {"code": "...", "message": "..."}}`
 
-### `GET /v1/`
-List all configured database aliases.
+Authentication:
+- `Authorization: Bearer <key>`, or
+- `X-API-Key: <key>`
+- `GET /v1/health` is unauthenticated
 
-```json
-{ "data": { "databases": ["customers", "inventory"] } }
-```
-
-### `GET /v1/{db}/tables`
-List tables in a database.
+### `GET /v1/health` (no auth)
 
 ```json
-{ "data": { "database": "inventory", "tables": ["Orders", "Products", "Suppliers"] } }
+{
+  "data": {
+    "status": "ok",
+    "version": "v0.1.0",
+    "databases": { "total": 2, "ok": 2, "error": 0 }
+  }
+}
 ```
 
-### `GET /v1/{db}/{table}`
-Query rows with optional filters, pagination, and sorting.
+`status` is `"degraded"` if any database cannot be pinged.
 
-| Query param | Description |
-|---|---|
-| `limit` | Max rows (default: config `max_rows`, max: 1000) |
-| `offset` | Skip N rows |
-| `sort` | Column to sort by |
-| `sort_desc` | `true` to reverse sort |
-| `<column>=<value>` | Filter by column equality |
+### `GET /v1/` (auth required)
 
+```json
+{
+  "data": {
+    "databases": [
+      {"alias": "customers", "path": "C:\\Data\\Customers.mdb", "status": "ok"},
+      {"alias": "inventory", "path": "C:\\Data\\Inventory.mdb", "status": "ok"}
+    ]
+  }
+}
 ```
-GET /v1/inventory/Products?category=widgets&limit=50&sort=price&sort_desc=true
+
+### `GET /v1/{db}/tables` (auth required)
+
+```json
+{ "data": { "database": "inventory", "tables": ["Products", "Orders"] } }
 ```
+
+### `GET /v1/{db}/{table}` (auth required)
+Query params: `field=value` filters, `limit=N` (default 100, max from config), `offset=N`, `sort=col`, `sort_desc=true`
 
 ```json
 {
   "data": {
     "database": "inventory",
     "table": "Products",
-    "count": 3,
+    "count": 2,
     "rows": [
-      { "ProductID": 42, "Name": "Widget Pro", "Price": 29.99, "Active": true }
+      {"id": 1, "name": "Widget", "active": true, "created": "2024-06-15T12:00:00Z"}
     ]
   }
 }
 ```
 
-### `POST /v1/{db}/query`
-SQL passthrough — `SELECT` statements only.
+### `POST /v1/{db}/query` (auth required)
+Body: `{"sql": "SELECT TOP 10 * FROM Products WHERE active = True", "params": []}`
+
+Only `SELECT`/`WITH` queries are allowed; other statements return `403`.
 
 ```json
-{ "sql": "SELECT * FROM Products WHERE Category = ?", "params": ["widgets"] }
+{ "data": { "database": "inventory", "count": 1, "rows": [...] } }
 ```
-
-### `GET /v1/version`
-Returns the running binary version.
 
 ## JSON Type Mapping
 
@@ -131,12 +143,22 @@ databases:
   - alias: "inventory"
     path: 'C:\Data\Inventory.mdb'
 
+  # Glob: expose all .mdb files in a directory
+  - glob: 'C:\Data\*.mdb'
+
+  # Recursive glob
+  - glob: 'C:\Data\**\*.mdb'
+
 api:
   max_rows: 1000               # hard cap per request
 
 tunnel:
   provider: none               # none | tsnet (requires -tags tsnet build)
 ```
+
+Glob alias derivation:
+- Non-recursive glob (`*.mdb`): filename without extension, lowercased.
+- Recursive glob (`**\*.mdb`): relative path from the glob base with path separators replaced by `_`.
 
 **Setting the env var for the service:**
 
