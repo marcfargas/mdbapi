@@ -9,8 +9,9 @@ on:
 # Job dependency chain:
 #
 #   test ──┐
-#           ├──► integration   (windows-latest, Docker container)
+#           ├──► integration   (windows-latest, no Go needed)
 #   build ──┘
+#     └── uploads windows-amd64 artifact (mdbapi.exe + probe.exe)
 
 jobs:
   test:
@@ -42,13 +43,24 @@ jobs:
           cache: true
 
       - name: Build windows/amd64
-        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" ./...
+        run: |
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" \
+            -o dist/mdbapi.exe ./cmd/mdbapi
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" \
+            -o dist/probe.exe  ./cmd/probe
 
       - name: Build windows/amd64 (tsnet)
-        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" ./...
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" ./cmd/mdbapi
 
       - name: Build windows/arm64
-        run: CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" ./...
+        run: CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" ./cmd/mdbapi
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64
+          path: dist/*.exe
+          retention-days: 1
 
   integration:
     name: Integration Tests
@@ -57,47 +69,39 @@ jobs:
     # Only on push (not PRs) — saves windows-latest runner minutes.
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4   # needed for ci/install-ace.ps1 and testdata clone
 
-      - uses: actions/setup-go@v5
+      - name: Download binaries
+        uses: actions/download-artifact@v4
         with:
-          go-version-file: go.mod
-          cache: true
+          name: windows-amd64
+          path: dist
 
       - name: Install ACE driver
-        # Resolves the download URL dynamically from the Microsoft Download Center
-        # page — no hardcoded CDN path (it has already changed once, causing 404).
         shell: pwsh
         run: powershell -ExecutionPolicy Bypass -NoProfile -File ci\install-ace.ps1
-
-      - name: Build Windows binaries
-        shell: pwsh
-        run: |
-          $env:CGO_ENABLED = '0'
-          go build -ldflags="-s -w" -o dist\mdbapi.exe .\cmd\mdbapi
-          go build -ldflags="-s -w" -o dist\probe.exe  .\cmd\probe
 
       - name: Fetch test data
         shell: pwsh
         run: git clone --depth 1 https://github.com/marcfargas/mdbtestdata testdata
 
       - name: Test -- service installer
-        # The windows-latest runner is a fresh VM with SCM available.
-        # Install the service, verify SCM registration, uninstall. Clean.
         shell: pwsh
         run: |
           $cfgDir = 'C:\ProgramData\MDBService'
           New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
           @'
-          service:
-            name: MDBRestService
-            display_name: MDB REST Service
-            description: Read-only REST API for Access databases
-          auth:
-            keys:
-              - "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-          databases: []
-          '@ | Out-File "$cfgDir\config.yaml" -Encoding utf8
+service:
+  name: MDBRestService
+  display_name: MDB REST Service
+  description: Read-only REST API for Access databases
+auth:
+  keys:
+    - "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+databases:
+  - alias: test
+    path: 'C:\data\test.mdb'
+'@ | Out-File "$cfgDir\config.yaml" -Encoding utf8
 
           Write-Host "--- install ---"
           & dist\mdbapi.exe install -config "$cfgDir\config.yaml"
