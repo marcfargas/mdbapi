@@ -64,36 +64,31 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Install ACE driver
+        # Resolves the download URL dynamically from the Microsoft Download Center
+        # page — no hardcoded CDN path (it has already changed once, causing 404).
+        shell: pwsh
+        run: powershell -ExecutionPolicy Bypass -NoProfile -File ci\install-ace.ps1
+
       - name: Build Windows binaries
         shell: pwsh
         run: |
           $env:CGO_ENABLED = '0'
-          go build -ldflags="-s -w" -o dist\mdbapi.exe   .\cmd\mdbapi
-          go build -ldflags="-s -w" -o dist\probe.exe    .\cmd\probe
+          go build -ldflags="-s -w" -o dist\mdbapi.exe .\cmd\mdbapi
+          go build -ldflags="-s -w" -o dist\probe.exe  .\cmd\probe
 
       - name: Fetch test data
         shell: pwsh
         run: git clone --depth 1 https://github.com/marcfargas/mdbtestdata testdata
 
-      - name: Pull Windows test image
-        # Falls back to building locally if image not yet pushed to GHCR.
+      - name: Test -- service installer
+        # The windows-latest runner is a fresh VM with SCM available.
+        # Install the service, verify SCM registration, uninstall. Clean.
         shell: pwsh
         run: |
-          docker pull ghcr.io/marcfargas/mdbapi-testenv:latest
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "Image not in GHCR — building locally..."
-            docker build --isolation process `
-              --file ci/Dockerfile.testenv `
-              --tag ghcr.io/marcfargas/mdbapi-testenv:latest `
-              .
-          }
-
-      - name: Test — service installer
-        # Mounts dist\ into the container, installs the service in the container's
-        # own SCM, verifies registration, then uninstalls. No host SCM is touched.
-        shell: pwsh
-        run: |
-          $cfg = @"
+          $cfgDir = 'C:\ProgramData\MDBService'
+          New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+          @'
           service:
             name: MDBRestService
             display_name: MDB REST Service
@@ -102,40 +97,25 @@ jobs:
             keys:
               - "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           databases: []
-          "@
-          # Write config where the container will see it
-          New-Item -ItemType Directory -Path dist\config -Force | Out-Null
-          $cfg | Out-File -FilePath dist\config\config.yaml -Encoding utf8
+          '@ | Out-File "$cfgDir\config.yaml" -Encoding utf8
 
-          docker run --isolation process --rm `
-            --volume "${PWD}\dist:C:\mdbapi" `
-            ghcr.io/marcfargas/mdbapi-testenv:latest `
-            powershell -Command @"
-              Set-StrictMode -Version Latest
-              `$ErrorActionPreference = 'Stop'
+          Write-Host "--- install ---"
+          & dist\mdbapi.exe install -config "$cfgDir\config.yaml"
+          if ($LASTEXITCODE -ne 0) { throw "install failed ($LASTEXITCODE)" }
 
-              Write-Host '--- install ---'
-              & C:\mdbapi\mdbapi.exe install -config C:\mdbapi\config\config.yaml
-              if (`$LASTEXITCODE -ne 0) { throw 'install failed' }
+          Write-Host "--- verify SCM ---"
+          $svc = Get-Service -Name MDBRestService -ErrorAction SilentlyContinue
+          if (-not $svc) { throw "Service not found in SCM after install" }
+          Write-Host "Service registered: $($svc.Status)"
 
-              Write-Host '--- verify SCM registration ---'
-              `$svc = Get-Service -Name MDBRestService -ErrorAction SilentlyContinue
-              if (-not `$svc) { throw 'Service not found in SCM after install' }
-              Write-Host "Service status: `$(`$svc.Status)"
+          Write-Host "--- uninstall ---"
+          & dist\mdbapi.exe uninstall -config "$cfgDir\config.yaml"
+          if ($LASTEXITCODE -ne 0) { throw "uninstall failed ($LASTEXITCODE)" }
 
-              Write-Host '--- uninstall ---'
-              & C:\mdbapi\mdbapi.exe uninstall -config C:\mdbapi\config\config.yaml
-              if (`$LASTEXITCODE -ne 0) { throw 'uninstall failed' }
+          Write-Host "Service installer test PASSED"
 
-              Write-Host 'Service installer test PASSED'
-          "@
-
-      - name: Test — ODBC probe
-        # Mounts dist\ + testdata\ into the container; runs the type-inspection probe.
+      - name: Test -- ODBC probe
         shell: pwsh
         run: |
-          docker run --isolation process --rm `
-            --volume "${PWD}\dist:C:\mdbapi" `
-            --volume "${PWD}\testdata:C:\testdata" `
-            ghcr.io/marcfargas/mdbapi-testenv:latest `
-            powershell -Command "& C:\mdbapi\probe.exe -dir C:\testdata"
+          & dist\probe.exe -dir testdata
+          if ($LASTEXITCODE -ne 0) { throw "ODBC probe failed ($LASTEXITCODE)" }
