@@ -6,16 +6,15 @@
 #   ghcr.io/marcfargas/mdbapi-testenv:latest
 #
 # Requires: docker build on a windows-latest runner (process isolation,
-# host OS must match container OS — both ltsc2022).
+# host OS must match container OS -- both ltsc2022).
 
 FROM mcr.microsoft.com/windows/servercore:ltsc2022
 
-SHELL ["powershell", "-Command", \
-    "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
-
-# Resolve and install ACE 2016 (64-bit) from the Microsoft Download Center page.
-# Scraping the URL avoids hardcoding a CDN path that Microsoft may rotate.
+# Copy the ACE installer script and run it with -File (explicit file execution,
+# avoids SHELL-directive concatenation quirks and encoding surprises).
 COPY ci/install-ace.ps1 C:\\install-ace.ps1
-RUN C:\\install-ace.ps1; Remove-Item -Force C:\\install-ace.ps1
+RUN powershell -ExecutionPolicy Bypass -NoProfile -NonInteractive \
+    -File C:\\install-ace.ps1 && \
+    del C:\\install-ace.ps1
 
 WORKDIR C:\\mdbapi

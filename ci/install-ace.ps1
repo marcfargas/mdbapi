@@ -1,9 +1,12 @@
-# install-ace.ps1 — Downloads and installs the Microsoft Access Database Engine
+# install-ace.ps1 -- Downloads and installs the Microsoft Access Database Engine
 # 2016 (64-bit) by resolving the current URL from the Microsoft Download Center.
 # Called from ci/Dockerfile.testenv and directly on CI runners.
 #
 # Why not hardcode the URL? It has already changed once (404 in CI).
 # Scraping the details page keeps this resilient to CDN path changes.
+#
+# ASCII-only file: PowerShell inside Windows containers may misread UTF-8
+# multi-byte characters (e.g. em-dash) as Windows-1252, breaking string parsing.
 
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
@@ -20,7 +23,7 @@ $url = [regex]::Match(
 ).Value
 
 if (-not $url) {
-    throw "Could not find ACE 64-bit download URL on $detailsUrl — page layout may have changed."
+    throw "Could not find ACE 64-bit download URL on ${detailsUrl} - page layout may have changed."
 }
 
 Write-Host "Downloading: $url"
@@ -33,4 +36,4 @@ if ($proc.ExitCode -ne 0) {
 }
 
 Remove-Item -Force ace64.exe
-Write-Host "ACE 2016 (64-bit) installed."
+Write-Host "ACE 2016 installed."
