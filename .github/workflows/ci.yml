@@ -6,10 +6,15 @@ on:
   pull_request:
     branches: [develop, main]
 
+# Job dependency chain:
+#
+#   test ──┐
+#           ├──► integration   (windows-latest, Docker container)
+#   build ──┘
+
 jobs:
   test:
     name: Unit Tests
-    # Unit tests run on any OS — no ODBC needed for pure-function tests.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -46,9 +51,10 @@ jobs:
         run: CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags="-s -w" ./...
 
   integration:
-    name: Integration Tests (ODBC)
+    name: Integration Tests
     runs-on: windows-latest
-    # Only run on pushes to main/develop to save runner minutes.
+    needs: [test, build]
+    # Only on push (not PRs) — saves windows-latest runner minutes.
     if: github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
@@ -58,27 +64,78 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Test data lives in a separate repo (no license on the files).
-      # We clone it fresh at CI time — never committed to this repo.
+      - name: Build Windows binaries
+        shell: pwsh
+        run: |
+          $env:CGO_ENABLED = '0'
+          go build -ldflags="-s -w" -o dist\mdbapi.exe   .\cmd\mdbapi
+          go build -ldflags="-s -w" -o dist\probe.exe    .\cmd\probe
+
       - name: Fetch test data
         shell: pwsh
-        run: |
-          git clone --depth 1 https://github.com/marcfargas/mdbtestdata testdata
+        run: git clone --depth 1 https://github.com/marcfargas/mdbtestdata testdata
 
-      - name: Install Access Database Engine (64-bit)
+      - name: Pull Windows test image
+        # Falls back to building locally if image not yet pushed to GHCR.
         shell: pwsh
         run: |
-          $url = "https://download.microsoft.com/download/2/4/3/24375141-E08D-4803-AB0E-10F2E3A07AAA/AccessDatabaseEngine_X64.exe"
-          Invoke-WebRequest $url -OutFile ace64.exe
-          Start-Process ace64.exe -ArgumentList "/quiet" -Wait -NoNewWindow
+          docker pull ghcr.io/marcfargas/mdbapi-testenv:latest
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Image not in GHCR — building locally..."
+            docker build --isolation process `
+              --file ci/Dockerfile.testenv `
+              --tag ghcr.io/marcfargas/mdbapi-testenv:latest `
+              .
+          }
 
-      - name: Build probe tool
+      - name: Test — service installer
+        # Mounts dist\ into the container, installs the service in the container's
+        # own SCM, verifies registration, then uninstalls. No host SCM is touched.
         shell: pwsh
-        run: go build -o probe.exe ./cmd/probe
+        run: |
+          $cfg = @"
+          service:
+            name: MDBRestService
+            display_name: MDB REST Service
+            description: Read-only REST API for Access databases
+          auth:
+            keys:
+              - "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          databases: []
+          "@
+          # Write config where the container will see it
+          New-Item -ItemType Directory -Path dist\config -Force | Out-Null
+          $cfg | Out-File -FilePath dist\config\config.yaml -Encoding utf8
 
-      - name: Run ODBC probe against testdata
+          docker run --isolation process --rm `
+            --volume "${PWD}\dist:C:\mdbapi" `
+            ghcr.io/marcfargas/mdbapi-testenv:latest `
+            powershell -Command @"
+              Set-StrictMode -Version Latest
+              `$ErrorActionPreference = 'Stop'
+
+              Write-Host '--- install ---'
+              & C:\mdbapi\mdbapi.exe install -config C:\mdbapi\config\config.yaml
+              if (`$LASTEXITCODE -ne 0) { throw 'install failed' }
+
+              Write-Host '--- verify SCM registration ---'
+              `$svc = Get-Service -Name MDBRestService -ErrorAction SilentlyContinue
+              if (-not `$svc) { throw 'Service not found in SCM after install' }
+              Write-Host "Service status: `$(`$svc.Status)"
+
+              Write-Host '--- uninstall ---'
+              & C:\mdbapi\mdbapi.exe uninstall -config C:\mdbapi\config\config.yaml
+              if (`$LASTEXITCODE -ne 0) { throw 'uninstall failed' }
+
+              Write-Host 'Service installer test PASSED'
+          "@
+
+      - name: Test — ODBC probe
+        # Mounts dist\ + testdata\ into the container; runs the type-inspection probe.
         shell: pwsh
-        run: .\probe.exe -dir testdata\
-
-      - name: Run integration tests
-        run: go test ./... -run Integration -v -tags integration -count=1
+        run: |
+          docker run --isolation process --rm `
+            --volume "${PWD}\dist:C:\mdbapi" `
+            --volume "${PWD}\testdata:C:\testdata" `
+            ghcr.io/marcfargas/mdbapi-testenv:latest `
+            powershell -Command "& C:\mdbapi\probe.exe -dir C:\testdata"

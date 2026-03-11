@@ -1,0 +1,21 @@
+# ci/Dockerfile.testenv
+# Windows Server Core test environment with the Microsoft Access Database Engine
+# (64-bit) pre-installed. Used for service-installer and ODBC integration tests.
+#
+# Built via .github/workflows/ci-images.yml and pushed to:
+#   ghcr.io/marcfargas/mdbapi-testenv:latest
+#
+# Requires: docker build on a windows-latest runner (process isolation,
+# host OS must match container OS — both ltsc2022).
+
+FROM mcr.microsoft.com/windows/servercore:ltsc2022
+
+SHELL ["powershell", "-Command", \
+    "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
+
+# Resolve and install ACE 2016 (64-bit) from the Microsoft Download Center page.
+# Scraping the URL avoids hardcoding a CDN path that Microsoft may rotate.
+COPY ci/install-ace.ps1 C:\\install-ace.ps1
+RUN C:\\install-ace.ps1; Remove-Item -Force C:\\install-ace.ps1
+
+WORKDIR C:\\mdbapi
