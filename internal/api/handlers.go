@@ -13,7 +13,7 @@ import (
 // handleListDatabases returns all registered database aliases.
 // GET /v1/
 func (s *Server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
-	aliases := s.pool.Aliases()
+	aliases := s.store.Aliases()
 	sort.Strings(aliases)
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"databases": aliases,
@@ -24,14 +24,12 @@ func (s *Server) handleListDatabases(w http.ResponseWriter, r *http.Request) {
 // GET /v1/{db}/tables
 func (s *Server) handleListTables(w http.ResponseWriter, r *http.Request) {
 	dbAlias := r.PathValue("db")
-	db, err := s.pool.Get(dbAlias)
+	tables, err := s.store.ListTables(r.Context(), dbAlias)
 	if err != nil {
-		notFound(w)
-		return
-	}
-
-	tables, err := mdb.ListTables(r.Context(), db)
-	if err != nil {
+		if isNotFound(err) {
+			notFound(w)
+			return
+		}
 		internalError(w, err)
 		return
 	}
@@ -47,16 +45,8 @@ func (s *Server) handleQueryTable(w http.ResponseWriter, r *http.Request) {
 	dbAlias := r.PathValue("db")
 	tableName := r.PathValue("table")
 
-	db, err := s.pool.Get(dbAlias)
-	if err != nil {
-		notFound(w)
-		return
-	}
-
-	cache := s.schemaCache(dbAlias)
 	opts := mdb.ParseQueryOpts(r.URL.Query())
-
-	result, err := mdb.QueryTable(r.Context(), db, cache, tableName, opts, s.maxRows)
+	result, err := s.store.QueryTable(r.Context(), dbAlias, tableName, opts, s.maxRows)
 	if err != nil {
 		if isNotFound(err) {
 			notFound(w)
@@ -80,12 +70,6 @@ func (s *Server) handleQueryTable(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleExecuteSQL(w http.ResponseWriter, r *http.Request) {
 	dbAlias := r.PathValue("db")
 
-	db, err := s.pool.Get(dbAlias)
-	if err != nil {
-		notFound(w)
-		return
-	}
-
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		badRequest(w, "failed to read request body")
@@ -105,10 +89,14 @@ func (s *Server) handleExecuteSQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := mdb.ExecuteSQL(r.Context(), db, req.SQL, req.Params, s.maxRows)
+	result, err := s.store.ExecuteSQL(r.Context(), dbAlias, req.SQL, req.Params, s.maxRows)
 	if err != nil {
 		if errors.Is(err, mdb.ErrWriteNotAllowed) {
 			forbidden(w, "only SELECT statements are allowed")
+			return
+		}
+		if isNotFound(err) {
+			notFound(w)
 			return
 		}
 		internalError(w, err)

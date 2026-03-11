@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	_ "github.com/alexbrainman/odbc" // register "odbc" driver
+	// "odbc" driver is registered via driver_windows_amd64.go
 )
 
 const (

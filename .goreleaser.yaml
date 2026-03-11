@@ -1,0 +1,78 @@
+version: 2
+
+project_name: mdbapi
+
+before:
+  hooks:
+    - go mod tidy
+    - go test ./... -short
+
+builds:
+  # Standard build — no tunnel, smallest binary
+  - id: mdbapi-amd64
+    main: ./cmd/mdbapi
+    binary: mdbapi
+    goos: [windows]
+    goarch: [amd64]
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+  - id: mdbapi-arm64
+    main: ./cmd/mdbapi
+    binary: mdbapi
+    goos: [windows]
+    goarch: [arm64]
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+  # tsnet variant — includes Tailscale in-process node (~20 MB larger)
+  - id: mdbapi-tsnet-amd64
+    main: ./cmd/mdbapi
+    binary: mdbapi_tsnet
+    goos: [windows]
+    goarch: [amd64]
+    tags: [tsnet]
+    ldflags:
+      - -s -w -X main.Version={{.Version}}
+
+archives:
+  - id: standard
+    builds: [mdbapi-amd64, mdbapi-arm64]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: zip
+    files:
+      - configs/config.example.yaml
+      - README.md
+      - LICENSE
+
+  - id: tsnet
+    builds: [mdbapi-tsnet-amd64]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}_tsnet"
+    format: zip
+    files:
+      - configs/config.example.yaml
+      - README.md
+      - LICENSE
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+release:
+  github:
+    owner: marcfargas
+    name: mdbapi
+  draft: false
+  prerelease: auto
+  name_template: "v{{.Version}}"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - Merge pull request
+      - Merge branch

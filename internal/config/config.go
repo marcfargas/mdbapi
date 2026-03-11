@@ -150,15 +150,16 @@ func applyDefaults(cfg *Config) {
 
 const minKeyLen = 32
 
-var unsetEnvRe = regexp.MustCompile(`__UNSET_ENV_([^_]+)__`)
-
 func validate(cfg *Config) error {
 	var errs []string
 
 	// Check for unresolved env vars in auth keys.
+	// Sentinel format: __UNSET_ENV_VARNAME__ (VARNAME may contain underscores).
 	for i, k := range cfg.Auth.Keys {
-		if m := unsetEnvRe.FindStringSubmatch(k); m != nil {
-			errs = append(errs, fmt.Sprintf("auth.keys[%d]: environment variable %q is not set", i, m[1]))
+		if strings.HasPrefix(k, "__UNSET_ENV_") && strings.HasSuffix(k, "__") {
+			varName := strings.TrimPrefix(k, "__UNSET_ENV_")
+			varName = strings.TrimSuffix(varName, "__")
+			errs = append(errs, fmt.Sprintf("auth.keys[%d]: environment variable %q is not set", i, varName))
 		} else if len(k) < minKeyLen {
 			errs = append(errs, fmt.Sprintf("auth.keys[%d]: key too short (min %d chars), use 'mdbapi keygen'", i, minKeyLen))
 		}

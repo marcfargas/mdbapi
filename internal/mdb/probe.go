@@ -3,8 +3,7 @@ package mdb
 import (
 	"database/sql"
 	"fmt"
-
-	_ "github.com/alexbrainman/odbc"
+	// "odbc" driver registered via driver_windows_amd64.go
 )
 
 // ProbeDriver attempts to open an ODBC connection to verify the Access driver

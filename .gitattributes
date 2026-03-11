@@ -1,0 +1,18 @@
+# Normalize line endings on checkout.
+* text=auto
+
+# Go source: always LF
+*.go text eol=lf
+
+# YAML: always LF
+*.yaml text eol=lf
+*.yml  text eol=lf
+
+# Windows batch / PowerShell: CRLF on checkout
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binaries
+*.exe  binary
+*.zip  binary
+*.png  binary

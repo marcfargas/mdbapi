@@ -1,6 +1,7 @@
-//go:build windows
+//go:build windows && amd64
 
 // probe is the Phase 0 ODBC validation tool.
+// Only amd64: alexbrainman/odbc supports 386 and amd64 only (no arm64 driver).
 // It opens MDB/ACCDB files and reports the Go type of every column value,
 // validating that the Access ODBC driver returns sensible types for booleans,
 // dates, integers, and binary fields.

@@ -92,7 +92,8 @@ func (p *Program) run() error {
 	p.pool = pool
 
 	// 2. Create HTTP server.
-	p.server = api.NewServer(pool, p.cfg.API.MaxRows, p.version)
+	store := mdb.NewPoolStore(pool)
+	p.server = api.NewServer(store, p.cfg.API.MaxRows, p.version)
 	handler := p.server.Handler(p.cfg.Auth.Keys, p.cfg.Server.MaxBodySize)
 
 	// 3. Create tunnel provider and bind listener.
