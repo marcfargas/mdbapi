@@ -43,9 +43,22 @@ type AuthConfig struct {
 	Keys []string `yaml:"keys"`
 }
 
+// DatabaseConfig is either an explicit entry (Alias+Path) or a glob pattern.
+// Exactly one form must be used; mixing fields is a validation error.
+//
+//	# Explicit
+//	- alias: inventory
+//	  path:  'C:\Data\Inventory.mdb'
+//
+//	# Single-level glob — all *.mdb directly in C:\Data
+//	- glob: 'C:\Data\*.mdb'
+//
+//	# Recursive glob — all *.mdb anywhere under C:\Data
+//	- glob: 'C:\Data\**\*.mdb'
 type DatabaseConfig struct {
 	Alias string `yaml:"alias"`
 	Path  string `yaml:"path"`
+	Glob  string `yaml:"glob"`
 }
 
 type TunnelConfig struct {
@@ -89,6 +102,14 @@ func Load(path string) (*Config, error) {
 	if err := validate(&cfg); err != nil {
 		return nil, err
 	}
+	// Expand glob entries into concrete Alias+Path entries.
+	// This happens after structural validation so glob syntax errors are
+	// reported clearly, separate from structural config errors.
+	resolved, err := expandGlobs(cfg.Databases)
+	if err != nil {
+		return nil, fmt.Errorf("config: expand globs: %w", err)
+	}
+	cfg.Databases = resolved
 	return &cfg, nil
 }
 
@@ -165,16 +186,27 @@ func validate(cfg *Config) error {
 		}
 	}
 
-	// At least one database required.
+	// At least one database entry required (explicit or glob).
 	if len(cfg.Databases) == 0 {
-		errs = append(errs, "databases: at least one database alias must be configured")
+		errs = append(errs, "databases: at least one database entry must be configured")
 	}
 	for i, db := range cfg.Databases {
-		if db.Alias == "" {
-			errs = append(errs, fmt.Sprintf("databases[%d]: alias is required", i))
-		}
-		if db.Path == "" {
-			errs = append(errs, fmt.Sprintf("databases[%d]: path is required", i))
+		if db.Glob != "" {
+			// Glob entry: alias and path must not be set.
+			if db.Alias != "" {
+				errs = append(errs, fmt.Sprintf("databases[%d]: cannot set both 'glob' and 'alias'", i))
+			}
+			if db.Path != "" {
+				errs = append(errs, fmt.Sprintf("databases[%d]: cannot set both 'glob' and 'path'", i))
+			}
+		} else {
+			// Explicit entry: alias and path are required.
+			if db.Alias == "" {
+				errs = append(errs, fmt.Sprintf("databases[%d]: alias is required", i))
+			}
+			if db.Path == "" {
+				errs = append(errs, fmt.Sprintf("databases[%d]: path is required", i))
+			}
 		}
 	}
 

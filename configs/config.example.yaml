@@ -25,11 +25,21 @@ auth:
     # - "${MDBAPI_KEY_OLD}"  # remove after rotation
 
 databases:
+  # Explicit entry — a single database with a fixed alias.
   - alias: "inventory"
     path: 'C:\Data\Inventory.mdb'
 
   # - alias: "customers"
   #   path: 'C:\Data\Customers.accdb'
+
+  # Glob entry — expose all *.mdb files in a directory.
+  # Alias = filename without extension, lowercased (e.g. "orders").
+  # - glob: 'C:\Data\*.mdb'
+
+  # Recursive glob — expose all *.mdb files in a directory tree.
+  # Alias = relative path from glob base with separators replaced by "_".
+  # e.g. C:\Data\2024\Sales.mdb → alias "2024_sales"
+  # - glob: 'C:\Data\**\*.mdb'
 
 # Tunnel configuration.
 # provider: none   — local listener only (default). Recommended for production.
