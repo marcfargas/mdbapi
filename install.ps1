@@ -35,6 +35,7 @@
 param(
     [switch]$Develop,
     [switch]$Tsnet,
+    [switch]$x86,
     [string]$Version,
     [string]$InstallDir,
     [string]$Token
@@ -51,14 +52,16 @@ $Repo  = 'mdbapi'
 # ---------------------------------------------------------------------------
 if ($env:MDBAPI_CHANNEL -eq 'develop') { $Develop = $true }
 if ($env:MDBAPI_TSNET -eq '1') { $Tsnet = $true }
+if ($env:MDBAPI_X86 -eq '1') { $x86 = $true }
 if ($env:MDBAPI_VERSION -and -not $Version) { $Version = $env:MDBAPI_VERSION }
 if ($env:MDBAPI_DIR -and -not $InstallDir) { $InstallDir = $env:MDBAPI_DIR }
 
 # ---------------------------------------------------------------------------
-# Architecture — amd64 only (ACE ODBC driver is not available for arm64)
+# Architecture
 # ---------------------------------------------------------------------------
-$arch = 'amd64'
-Write-Host "mdbapi installer — Windows amd64" -ForegroundColor Cyan
+$arch = if ($x86) { '386' } else { 'amd64' }
+$archLabel = if ($x86) { '32-bit' } else { '64-bit' }
+Write-Host "mdbapi installer — Windows $archLabel" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
 # Resolve GitHub auth token

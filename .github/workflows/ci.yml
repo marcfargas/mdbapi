@@ -70,11 +70,24 @@ jobs:
           path: dist/amd64/*.exe
           retention-days: 90
 
+      - name: Build windows/386
+        run: |
+          mkdir -p dist/386
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="-s -w" \
+            -o dist/386/mdbapi.exe ./cmd/mdbapi
+
       - name: Upload tsnet binaries
         uses: actions/upload-artifact@v4
         with:
           name: windows-amd64-tsnet
           path: dist/tsnet/*.exe
+          retention-days: 90
+
+      - name: Upload 32-bit binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-386
+          path: dist/386/*.exe
           retention-days: 90
 
   integration-ace2016:

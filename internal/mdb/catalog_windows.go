@@ -35,10 +35,10 @@ const (
 	sqlSuccess      uintptr = 0
 	sqlSuccessInfo  uintptr = 1
 	sqlNoData       uintptr = 100
-	// SQL_C_WCHAR = -8 as SQLSMALLINT; passed as uintptr it sign-extends.
-	sqlCWchar uintptr = uintptr(uint64(0xFFFFFFFFFFFFFFF8))
+	// SQL_C_WCHAR = -8 as SQLSMALLINT; use ^uintptr(7) for portable sign extension.
+	sqlCWchar = ^uintptr(7)  // 0xFFF...F8
 	// SQL_NTS = -3 as SQLSMALLINT.
-	sqlNTS uintptr = uintptr(uint64(0xFFFFFFFFFFFFFFFD))
+	sqlNTS = ^uintptr(2)  // 0xFFF...FD
 	// TABLE_NAME is column 3 in the SQLTables result set (1-indexed).
 	sqlTablesTableNameCol uintptr = 3
 )
