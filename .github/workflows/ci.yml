@@ -76,11 +76,24 @@ jobs:
           CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="-s -w" \
             -o dist/386/mdbapi.exe ./cmd/mdbapi
 
+      - name: Build windows/386 (tsnet)
+        run: |
+          mkdir -p dist/386-tsnet
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags tsnet -ldflags="-s -w" \
+            -o dist/386-tsnet/mdbapi_tsnet.exe ./cmd/mdbapi
+
       - name: Upload tsnet binaries
         uses: actions/upload-artifact@v4
         with:
           name: windows-amd64-tsnet
           path: dist/tsnet/*.exe
+          retention-days: 90
+
+      - name: Upload 32-bit tsnet binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-386-tsnet
+          path: dist/386-tsnet/*.exe
           retention-days: 90
 
       - name: Upload 32-bit binaries
