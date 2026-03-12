@@ -83,8 +83,11 @@ func matchGlob(pattern string) ([]string, error) {
 	}
 
 	// Recursive match: walk from base directory, match the leaf name pattern.
+	// ** matches files in subdirectories only, not the base directory itself.
+	// Use base\*.mdb (single *) to match files directly in the base.
 	base := globBase(pattern)
 	leafPattern := strings.ToLower(filepath.Base(pattern)) // e.g. "*.mdb"
+	absBase, _ := filepath.Abs(base)
 
 	var matches []string
 	err := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
@@ -93,6 +96,11 @@ func matchGlob(pattern string) ([]string, error) {
 			return nil
 		}
 		if d.IsDir() {
+			return nil
+		}
+		// ** means subdirectories only — skip files directly in base.
+		absDir, _ := filepath.Abs(filepath.Dir(path))
+		if strings.EqualFold(absDir, absBase) {
 			return nil
 		}
 		ok, merr := filepath.Match(leafPattern, strings.ToLower(d.Name()))

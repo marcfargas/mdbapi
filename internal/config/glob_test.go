@@ -135,9 +135,9 @@ func TestExpandGlobs_SingleLevel(t *testing.T) {
 
 func TestExpandGlobs_Recursive(t *testing.T) {
 	dir := t.TempDir()
-	makeTempDB(t, filepath.Join(dir, "root.mdb"))
-	makeTempDB(t, filepath.Join(dir, "sub", "child.mdb"))
-	makeTempDB(t, filepath.Join(dir, "sub", "deep", "leaf.mdb"))
+	makeTempDB(t, filepath.Join(dir, "root.mdb"))               // in base — must NOT match **
+	makeTempDB(t, filepath.Join(dir, "sub", "child.mdb"))        // subdirectory — must match
+	makeTempDB(t, filepath.Join(dir, "sub", "deep", "leaf.mdb")) // nested subdirectory — must match
 
 	in := []DatabaseConfig{
 		{Glob: filepath.Join(dir, "**", "*.mdb")},
@@ -146,22 +146,41 @@ func TestExpandGlobs_Recursive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(out) != 3 {
-		t.Fatalf("got %d entries, want 3", len(out))
+	// ** matches subdirectories only, NOT files directly in the base.
+	// root.mdb should NOT be included.
+	if len(out) != 2 {
+		names := make([]string, len(out))
+		for i, e := range out {
+			names[i] = e.Alias
+		}
+		t.Fatalf("got %d entries %v, want 2 (sub_child, sub_deep_leaf)", len(out), names)
 	}
 	aliases := make([]string, len(out))
 	for i, e := range out {
 		aliases[i] = e.Alias
 	}
 	sort.Strings(aliases)
-	// Recursive glob uses full relative path to avoid collisions across dirs.
-	// root.mdb → "root", sub/child.mdb → "sub_child", sub/deep/leaf.mdb → "sub_deep_leaf"
-	want := []string{"root", "sub_child", "sub_deep_leaf"}
-	sort.Strings(want)
+	want := []string{"sub_child", "sub_deep_leaf"}
 	for i, a := range aliases {
 		if a != want[i] {
 			t.Errorf("aliases[%d] = %q, want %q", i, a, want[i])
 		}
+	}
+}
+
+func TestExpandGlobs_RecursiveDoesNotMatchBase(t *testing.T) {
+	dir := t.TempDir()
+	makeTempDB(t, filepath.Join(dir, "base.mdb")) // only file, directly in base
+
+	in := []DatabaseConfig{
+		{Glob: filepath.Join(dir, "**", "*.mdb")},
+	}
+	out, err := expandGlobs(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) != 0 {
+		t.Errorf("** should not match files in base dir, got %d entries", len(out))
 	}
 }
 
