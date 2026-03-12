@@ -60,54 +60,24 @@ switch ($Version) {
     }
 
     '365' {
-        # Microsoft 365 Access Runtime -- Click-to-Run, installed via Office Deployment Tool.
-        # This is what most production machines have (Office 365, Access 2019/2021 Runtime).
-        # Download: ~200-500 MB. Registers the same ODBC driver as ACE 2016.
+        # Microsoft 365 Access Runtime -- direct C2R installer from Microsoft.
+        # Source: https://support.microsoft.com/en-us/office/download-and-install-microsoft-365-access-runtime-185c5a32-8ba9-491e-ac76-91cbe3ea09c9
+        # This downloads only the Access Runtime (~150 MB), not the full Office suite.
+        $platform = if ($Arch -eq '64') { 'x64' } else { 'x86' }
+        $url = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=AccessRuntimeRetail&language=en-us&platform=$platform"
 
-        $odtDir = Join-Path $env:TEMP 'odt'
-        New-Item -ItemType Directory -Path $odtDir -Force | Out-Null
+        $installer = Join-Path $env:TEMP 'OfficeSetup.exe'
+        Write-Host "Downloading Microsoft 365 Access Runtime ${Arch}-bit..."
+        Invoke-WebRequest -Uri $url -OutFile $installer
 
-        # 1. Download Office Deployment Tool
-        $odtUrl = 'https://www.microsoft.com/en-us/download/details.aspx?id=49117'
-        Write-Host "Resolving ODT URL from: $odtUrl"
-        $page = (Invoke-WebRequest -Uri $odtUrl -UseBasicParsing).Content
-        $odtExeUrl = [regex]::Match(
-            $page,
-            'https://download\.microsoft\.com/download/[^\s"]+officedeploymenttool[^\s"]*\.exe',
-            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
-        ).Value
+        Write-Host "Installing Access Runtime (this may take a minute)..."
+        $proc = Start-Process -FilePath $installer -ArgumentList '/quiet /norestart' -Wait -PassThru
+        if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
+            throw "Access Runtime install failed ($($proc.ExitCode))"
+        }
 
-        if (-not $odtExeUrl) { throw "Could not find ODT download URL" }
-        Write-Host "Downloading ODT: $odtExeUrl"
-        $odtExe = Join-Path $odtDir 'odt.exe'
-        Invoke-WebRequest -Uri $odtExeUrl -OutFile $odtExe
-
-        # 2. Extract ODT (self-extracting archive)
-        Write-Host "Extracting ODT..."
-        $proc = Start-Process -FilePath $odtExe -ArgumentList "/quiet /extract:`"$odtDir`"" -Wait -PassThru
-        if ($proc.ExitCode -ne 0) { throw "ODT extraction failed ($($proc.ExitCode))" }
-
-        # 3. Write configuration for AccessRuntime 64-bit
-        $configXml = Join-Path $odtDir 'config.xml'
-        @(
-            '<Configuration>'
-            "  <Add OfficeClientEdition=`"$Arch`" Channel=`"Current`">"
-            '    <Product ID="AccessRuntimeRetail">'
-            '      <Language ID="en-us" />'
-            '    </Product>'
-            '  </Add>'
-            '  <Display Level="None" AcceptEULA="TRUE" />'
-            '</Configuration>'
-        ) -join "`r`n" | Set-Content -Path $configXml -Encoding ASCII
-
-        # 4. Download and install
-        $setup = Join-Path $odtDir 'setup.exe'
-        Write-Host "Downloading and installing Microsoft 365 Access Runtime (this may take a few minutes)..."
-        $proc = Start-Process -FilePath $setup -ArgumentList "/configure `"$configXml`"" -Wait -PassThru
-        if ($proc.ExitCode -ne 0) { throw "Access Runtime install failed ($($proc.ExitCode))" }
-
-        Remove-Item -Path $odtDir -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Host "Microsoft 365 Access Runtime installed."
+        Remove-Item -Force $installer -ErrorAction SilentlyContinue
+        Write-Host "Microsoft 365 Access Runtime ${Arch}-bit installed."
     }
 }
 
