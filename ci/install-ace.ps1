@@ -10,7 +10,7 @@
 
 param(
     [ValidateSet('2010', '2016')]
-    [string]$Version = '2010'
+    [string]$Version = '2016'
 )
 
 $ErrorActionPreference = 'Stop'
