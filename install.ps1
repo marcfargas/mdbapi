@@ -8,13 +8,13 @@
     $HOME\.mdbapi (user). Creates a sample config if none exists.
 
     Usage (stable release):
-        irm https://raw.githubusercontent.com/marcfargas/mdbapi/main/install.ps1 | iex
+        irm https://raw.githubusercontent.com/marcfargas/mdbapi/develop/install.ps1 | iex
 
     Usage (develop build from CI):
-        $env:MDBAPI_CHANNEL='develop'; irm https://raw.githubusercontent.com/marcfargas/mdbapi/main/install.ps1 | iex
+        $env:MDBAPI_CHANNEL='develop'; irm https://raw.githubusercontent.com/marcfargas/mdbapi/develop/install.ps1 | iex
 
     Usage (with parameters):
-        & ([scriptblock]::Create((irm https://raw.githubusercontent.com/marcfargas/mdbapi/main/install.ps1))) -Develop
+        & ([scriptblock]::Create((irm https://raw.githubusercontent.com/marcfargas/mdbapi/develop/install.ps1))) -Develop
 
 .PARAMETER Develop
     Install latest build from the develop branch CI artifacts instead of

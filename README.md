@@ -8,7 +8,7 @@ One binary. Install it on the machine that has the `.mdb`/`.accdb` files, point 
 
 ```powershell
 # Latest release
-irm https://raw.githubusercontent.com/marcfargas/mdbapi/main/install.ps1 | iex
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/marcfargas/mdbapi/develop/install.ps1)))
 
 # Latest develop build
 & ([scriptblock]::Create((irm https://raw.githubusercontent.com/marcfargas/mdbapi/develop/install.ps1))) -Develop
