@@ -84,10 +84,26 @@ func main() {
 		fatalf("no .mdb files found in %s", *dir)
 	}
 
-	dbCfgs := makeDBConfigs(files)
-	fmt.Printf("Found %d MDB files\n", len(dbCfgs))
-	for _, cfg := range dbCfgs {
-		fmt.Printf("  - %s => %s\n", cfg.Alias, cfg.Path)
+	allCfgs := makeDBConfigs(files)
+	fmt.Printf("Found %d MDB files\n", len(allCfgs))
+
+	// Try to open each file individually; skip files that fail due to driver
+	// incompatibility (e.g. Access 97 files on a system with only ACE 2016).
+	// Only fail if zero files can be opened.
+	var dbCfgs []mdb.DBConfig
+	for _, cfg := range allCfgs {
+		p, err := mdb.NewPool([]mdb.DBConfig{cfg})
+		if err != nil {
+			fmt.Printf("  SKIP %s (%s): %v\n", cfg.Alias, cfg.Path, err)
+			continue
+		}
+		p.Close()
+		fmt.Printf("  OK   %s => %s\n", cfg.Alias, cfg.Path)
+		dbCfgs = append(dbCfgs, cfg)
+	}
+
+	if len(dbCfgs) == 0 {
+		fatalf("no MDB files could be opened — is an Access ODBC driver installed?")
 	}
 
 	pool, err := mdb.NewPool(dbCfgs)
