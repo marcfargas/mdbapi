@@ -60,23 +60,52 @@ switch ($Version) {
     }
 
     '365' {
-        # Microsoft 365 Access Runtime -- direct C2R installer from Microsoft.
-        # Source: https://support.microsoft.com/en-us/office/download-and-install-microsoft-365-access-runtime-185c5a32-8ba9-491e-ac76-91cbe3ea09c9
-        # This downloads only the Access Runtime (~150 MB), not the full Office suite.
-        $platform = if ($Arch -eq '64') { 'x64' } else { 'x86' }
-        $url = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=AccessRuntimeRetail&language=en-us&platform=$platform"
+        # Microsoft 365 Access Runtime via Office Deployment Tool.
+        # The direct C2R URL (c2rsetup.officeapps.live.com) launches an async installer
+        # that exits immediately — useless for CI. ODT's /configure actually waits.
+        # ExcludeApp blocks everything except AccessRuntime to keep download small.
 
-        $installer = Join-Path $env:TEMP 'OfficeSetup.exe'
-        Write-Host "Downloading Microsoft 365 Access Runtime ${Arch}-bit..."
-        Invoke-WebRequest -Uri $url -OutFile $installer
+        $odtDir = Join-Path $env:TEMP 'odt'
+        New-Item -ItemType Directory -Path $odtDir -Force | Out-Null
 
-        Write-Host "Installing Access Runtime (this may take a minute)..."
-        $proc = Start-Process -FilePath $installer -ArgumentList '/quiet /norestart' -Wait -PassThru
-        if ($proc.ExitCode -ne 0 -and $proc.ExitCode -ne 3010) {
-            throw "Access Runtime install failed ($($proc.ExitCode))"
-        }
+        # 1. Download Office Deployment Tool (small self-extracting exe)
+        $odtUrl = 'https://www.microsoft.com/en-us/download/details.aspx?id=49117'
+        Write-Host "Resolving ODT download URL..."
+        $page = (Invoke-WebRequest -Uri $odtUrl -UseBasicParsing).Content
+        $odtExeUrl = [regex]::Match(
+            $page,
+            'https://download\.microsoft\.com/download/[^\s"]+officedeploymenttool[^\s"]*\.exe',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+        ).Value
+        if (-not $odtExeUrl) { throw "Could not find ODT download URL" }
+        Write-Host "Downloading ODT: $odtExeUrl"
+        $odtExe = Join-Path $odtDir 'odt.exe'
+        Invoke-WebRequest -Uri $odtExeUrl -OutFile $odtExe
 
-        Remove-Item -Force $installer -ErrorAction SilentlyContinue
+        # 2. Extract ODT
+        $proc = Start-Process -FilePath $odtExe -ArgumentList "/quiet /extract:`"$odtDir`"" -Wait -PassThru
+        if ($proc.ExitCode -ne 0) { throw "ODT extraction failed ($($proc.ExitCode))" }
+
+        # 3. Config: AccessRuntimeRetail only, exclude all other products
+        $configXml = Join-Path $odtDir 'config.xml'
+        @(
+            '<Configuration>'
+            "  <Add OfficeClientEdition=`"$Arch`" Channel=`"Current`">"
+            '    <Product ID="AccessRuntimeRetail">'
+            '      <Language ID="en-us" />'
+            '    </Product>'
+            '  </Add>'
+            '  <Display Level="None" AcceptEULA="TRUE" />'
+            '</Configuration>'
+        ) -join "`r`n" | Set-Content -Path $configXml -Encoding ASCII
+
+        # 4. Download and install (synchronous — waits for completion)
+        $setup = Join-Path $odtDir 'setup.exe'
+        Write-Host "Installing Microsoft 365 Access Runtime ${Arch}-bit via ODT..."
+        $proc = Start-Process -FilePath $setup -ArgumentList "/configure `"$configXml`"" -Wait -PassThru
+        if ($proc.ExitCode -ne 0) { throw "Access Runtime install failed ($($proc.ExitCode))" }
+
+        Remove-Item -Path $odtDir -Recurse -Force -ErrorAction SilentlyContinue
         Write-Host "Microsoft 365 Access Runtime ${Arch}-bit installed."
     }
 }
