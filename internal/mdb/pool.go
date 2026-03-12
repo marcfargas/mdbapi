@@ -33,20 +33,22 @@ type DBInfo struct {
 
 // Pool manages a map of *sql.DB keyed by alias.
 type Pool struct {
-	mu    sync.RWMutex
-	dbs   map[string]*sql.DB
-	paths map[string]string // alias → file path (for listings)
+	mu       sync.RWMutex
+	dbs      map[string]*sql.DB
+	paths    map[string]string // alias → file path (for listings)
+	connStrs map[string]string // alias → ODBC connection string (for catalog fallback)
 }
 
 // NewPool opens ODBC connections for all configured databases.
 // All connections use ReadOnly=1 to prevent exclusive locks.
 func NewPool(dbs []DBConfig) (*Pool, error) {
 	p := &Pool{
-		dbs:   make(map[string]*sql.DB, len(dbs)),
-		paths: make(map[string]string, len(dbs)),
+		dbs:      make(map[string]*sql.DB, len(dbs)),
+		paths:    make(map[string]string, len(dbs)),
+		connStrs: make(map[string]string, len(dbs)),
 	}
 	for _, cfg := range dbs {
-		db, err := openDB(cfg.Path, cfg.Driver)
+		db, connStr, err := openDB(cfg.Path, cfg.Driver)
 		if err != nil {
 			// Close any already-opened connections before returning.
 			p.Close()
@@ -54,8 +56,17 @@ func NewPool(dbs []DBConfig) (*Pool, error) {
 		}
 		p.dbs[cfg.Alias] = db
 		p.paths[cfg.Alias] = cfg.Path
+		p.connStrs[cfg.Alias] = connStr
 	}
 	return p, nil
+}
+
+// ConnStrFor returns the ODBC connection string used to open alias.
+// Used by PoolStore for catalog-level introspection (SQLTables fallback).
+func (p *Pool) ConnStrFor(alias string) string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.connStrs[alias]
 }
 
 // Get returns the *sql.DB for a given alias, or ErrUnknownAlias.

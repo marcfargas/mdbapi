@@ -9,8 +9,8 @@ import (
 
 var errODBCNotAvailable = fmt.Errorf("ODBC Access driver only available on Windows")
 
-func openDB(path, explicitDriver string) (*sql.DB, error) {
+func openDB(path, explicitDriver string) (*sql.DB, string, error) {
 	// ODBC is only available on Windows.
 	// This stub satisfies the compiler on non-Windows platforms.
-	return nil, errODBCNotAvailable
+	return nil, "", errODBCNotAvailable
 }

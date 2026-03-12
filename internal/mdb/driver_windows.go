@@ -90,8 +90,9 @@ func isFallbackError(err error) bool {
 }
 
 // openDB opens an Access database with automatic driver fallback.
+// Returns the opened *sql.DB, the connection string that succeeded, and any error.
 // If explicitDriver is non-empty, only that driver is tried (no fallback).
-func openDB(path, explicitDriver string) (*sql.DB, error) {
+func openDB(path, explicitDriver string) (*sql.DB, string, error) {
 	drivers := installedAccessDrivers()
 	if explicitDriver != "" {
 		drivers = []string{explicitDriver}
@@ -99,20 +100,20 @@ func openDB(path, explicitDriver string) (*sql.DB, error) {
 
 	var lastErr error
 	for _, driverName := range drivers {
-		db, err := openDBWithDriver(path, driverName)
+		db, connStr, err := openDBWithDriver(path, driverName)
 		if err == nil {
-			return db, nil
+			return db, connStr, nil
 		}
 		lastErr = err
 		if !isFallbackError(err) {
 			// Real error (file not found, permissions, etc.) — stop immediately.
-			return nil, fmt.Errorf("driver %q: %w", driverName, err)
+			return nil, "", fmt.Errorf("driver %q: %w", driverName, err)
 		}
 		// Format mismatch or driver not installed — try next.
 	}
 
 	tried := strings.Join(drivers, ", ")
-	return nil, fmt.Errorf("no compatible Access driver found (tried: %s): %w", tried, lastErr)
+	return nil, "", fmt.Errorf("no compatible Access driver found (tried: %s): %w", tried, lastErr)
 }
 
 // openDBWithDriver opens path using a specific named ODBC driver.
@@ -126,21 +127,21 @@ func openDB(path, explicitDriver string) (*sql.DB, error) {
 //
 // Uid=Admin;Pwd= grants access to MSysObjects on databases without workgroup
 // security (the default for the vast majority of Access files in the wild).
-func openDBWithDriver(path, driverName string) (*sql.DB, error) {
+func openDBWithDriver(path, driverName string) (*sql.DB, string, error) {
 	connStr := fmt.Sprintf(
 		`DRIVER={%s};DBQ=%s;Uid=Admin;Pwd=;`,
 		driverName, path,
 	)
 	db, err := sql.Open("odbc", connStr)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	db.SetMaxOpenConns(MaxOpenConns)
 	db.SetMaxIdleConns(MaxIdleConns)
 	db.SetConnMaxLifetime(ConnMaxLifetime)
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, err
+		return nil, "", err
 	}
-	return db, nil
+	return db, connStr, nil
 }
