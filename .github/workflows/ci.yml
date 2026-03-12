@@ -12,7 +12,8 @@ env:
 # Job dependency chain:
 #
 #   test ──┐
-#           ├──► integration   (windows-latest, no Go needed)
+#           ├──► integration-ace2016 (windows-latest, no Go needed)
+#           └──► integration-ace2010 (windows-latest, no Go needed)
 #   build ──┘
 #     └── uploads windows-amd64 artifact (mdbapi.exe + probe.exe + integration.exe)
 
@@ -67,14 +68,14 @@ jobs:
           path: dist/*.exe
           retention-days: 1
 
-  integration:
-    name: Integration Tests
+  integration-ace2016:
+    name: Integration Tests (ACE 2016)
     runs-on: windows-latest
     needs: [test, build]
-    # Only on push (not PRs) — saves windows-latest runner minutes.
+    # Only on push (not PRs) - saves windows-latest runner minutes.
     if: github.event_name == 'push'
     steps:
-      - uses: actions/checkout@v4   # needed for ci/install-ace.ps1 and testdata clone
+      - uses: actions/checkout@v4
 
       - name: Download binaries
         uses: actions/download-artifact@v4
@@ -82,9 +83,9 @@ jobs:
           name: windows-amd64
           path: dist
 
-      - name: Install ACE driver
+      - name: Install ACE 2016
         shell: pwsh
-        run: .\ci\install-ace.ps1
+        run: .\ci\install-ace.ps1 -Version 2016
 
       - name: Fetch test data
         shell: pwsh
@@ -112,8 +113,59 @@ jobs:
 
           Write-Host "Service installer test PASSED"
 
-      - name: Test -- ODBC integration
+      - name: Test -- ODBC integration (modern files)
         shell: pwsh
         run: |
-          & dist\integration.exe -dir testdata
+          & dist\integration.exe -dir testdata\data
+          if ($LASTEXITCODE -ne 0) { throw "Integration tests failed" }
+
+  integration-ace2010:
+    name: Integration Tests (ACE 2010)
+    runs-on: windows-latest
+    needs: [test, build]
+    # Only on push (not PRs) - saves windows-latest runner minutes.
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-amd64
+          path: dist
+
+      - name: Install ACE 2010
+        shell: pwsh
+        run: .\ci\install-ace.ps1 -Version 2010
+
+      - name: Fetch test data
+        shell: pwsh
+        run: git clone --depth 1 https://github.com/marcfargas/mdbtestdata testdata
+
+      - name: Test -- service installer
+        shell: pwsh
+        run: |
+          $cfgDir = 'C:\ProgramData\MDBService'
+          New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
+          Copy-Item ci\test-config.yaml "$cfgDir\config.yaml"
+
+          Write-Host "--- install ---"
+          & dist\mdbapi.exe install -config "$cfgDir\config.yaml"
+          if ($LASTEXITCODE -ne 0) { throw "install failed ($LASTEXITCODE)" }
+
+          Write-Host "--- verify SCM ---"
+          $svc = Get-Service -Name MDBRestService -ErrorAction SilentlyContinue
+          if (-not $svc) { throw "Service not found in SCM after install" }
+          Write-Host "Service registered: $($svc.Status)"
+
+          Write-Host "--- uninstall ---"
+          & dist\mdbapi.exe uninstall -config "$cfgDir\config.yaml"
+          if ($LASTEXITCODE -ne 0) { throw "uninstall failed ($LASTEXITCODE)" }
+
+          Write-Host "Service installer test PASSED"
+
+      - name: Test -- ODBC integration (all files including Access 97)
+        shell: pwsh
+        run: |
+          & dist\integration.exe -dir testdata\data -dir testdata\data-legacy
           if ($LASTEXITCODE -ne 0) { throw "Integration tests failed" }

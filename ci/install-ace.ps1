@@ -17,34 +17,37 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
 
 switch ($Version) {
-    '2010' { $detailsUrl = 'https://www.microsoft.com/en-us/download/details.aspx?id=13255' }
-    '2016' { $detailsUrl = 'https://www.microsoft.com/en-us/download/details.aspx?id=54920' }
-    default { throw "Unsupported ACE version: $Version" }
+    '2010' {
+        # Microsoft retired the ACE 2010 download page. Use Wayback Machine archive.
+        $url = 'https://web.archive.org/web/20240214170634if_/https://download.microsoft.com/download/2/4/3/24375141-E08D-4803-AB0E-10F2E3A07AAA/AccessDatabaseEngine_X64.exe'
+        Write-Host "Downloading ACE 2010 from Wayback Machine archive..."
+        Invoke-WebRequest -Uri $url -OutFile ace64.exe
+    }
+    '2016' {
+        $detailsUrl = 'https://www.microsoft.com/en-us/download/details.aspx?id=54920'
+        Write-Host "Resolving ACE 2016 URL from: $detailsUrl"
+        $page = (Invoke-WebRequest -Uri $detailsUrl -UseBasicParsing).Content
+
+        $url = [regex]::Match(
+            $page,
+            'https://download\.microsoft\.com/download/[^\s"]+accessdatabaseengine_X64\.exe',
+            [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+        ).Value
+
+        if (-not $url) {
+            throw "Could not find ACE 2016 URL"
+        }
+
+        Write-Host "Downloading: $url"
+        Invoke-WebRequest -Uri $url -OutFile ace64.exe
+    }
 }
-
-Write-Host "Resolving ACE $Version download URL from: $detailsUrl"
-$page = (Invoke-WebRequest -Uri $detailsUrl -UseBasicParsing).Content
-
-$url = [regex]::Match(
-    $page,
-    'https://download\.microsoft\.com/download/[^\s"]+accessdatabaseengine_X64\.exe',
-    [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
-).Value
-
-if (-not $url) {
-    throw "Could not find ACE 64-bit download URL on ${detailsUrl} - page layout may have changed."
-}
-
-$installerPath = "ace64-$Version.exe"
-
-Write-Host "Downloading: $url"
-Invoke-WebRequest -Uri $url -OutFile $installerPath
 
 Write-Host "Installing ACE $Version (silent)..."
-$proc = Start-Process -FilePath $installerPath -ArgumentList '/quiet' -Wait -PassThru
+$proc = Start-Process -FilePath '.\ace64.exe' -ArgumentList '/quiet' -Wait -PassThru
 if ($proc.ExitCode -ne 0) {
     throw "ACE installer exited with code $($proc.ExitCode)"
 }
 
-Remove-Item -Force $installerPath
+Remove-Item -Force ace64.exe
 Write-Host "ACE $Version installed."
