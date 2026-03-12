@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -23,8 +24,13 @@ import (
 	"github.com/marcfargas/mdbapi/internal/winservice"
 )
 
-// Version is injected at build time: -ldflags="-X main.Version=1.0.0"
-var Version = "dev"
+// Build-time variables injected via -ldflags:
+//   -X main.Version=1.0.0 -X main.Commit=abc1234 -X main.Variant=tsnet
+var (
+	Version = "dev"
+	Commit  = "unknown"
+	Variant = "standard"
+)
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
@@ -57,7 +63,7 @@ func main() {
 	case "fixacl":
 		fixaclCmd(args)
 	case "version":
-		fmt.Println(Version)
+		fmt.Printf("mdbapi %s %s/%s commit=%s\n", Version, runtime.GOARCH, Variant, Commit)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %q\n\n", cmd)
 		printUsage()

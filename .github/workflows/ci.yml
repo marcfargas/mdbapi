@@ -49,8 +49,10 @@ jobs:
 
       - name: Build windows/amd64
         run: |
+          COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-s -w -X main.Commit=${COMMIT}"
           mkdir -p dist/amd64
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" \
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="${LDFLAGS}" \
             -o dist/amd64/mdbapi.exe ./cmd/mdbapi
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" \
             -o dist/amd64/probe.exe  ./cmd/probe
@@ -59,8 +61,10 @@ jobs:
 
       - name: Build windows/amd64 (tsnet)
         run: |
+          COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-s -w -X main.Commit=${COMMIT} -X main.Variant=tsnet"
           mkdir -p dist/tsnet
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" \
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="${LDFLAGS}" \
             -o dist/tsnet/mdbapi_tsnet.exe ./cmd/mdbapi
 
       - name: Upload binaries
@@ -72,14 +76,18 @@ jobs:
 
       - name: Build windows/386
         run: |
+          COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-s -w -X main.Commit=${COMMIT}"
           mkdir -p dist/386
-          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="-s -w" \
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -ldflags="${LDFLAGS}" \
             -o dist/386/mdbapi.exe ./cmd/mdbapi
 
       - name: Build windows/386 (tsnet)
         run: |
+          COMMIT=$(git rev-parse --short HEAD)
+          LDFLAGS="-s -w -X main.Commit=${COMMIT} -X main.Variant=tsnet"
           mkdir -p dist/386-tsnet
-          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags tsnet -ldflags="-s -w" \
+          CGO_ENABLED=0 GOOS=windows GOARCH=386 go build -tags tsnet -ldflags="${LDFLAGS}" \
             -o dist/386-tsnet/mdbapi_tsnet.exe ./cmd/mdbapi
 
       - name: Upload tsnet binaries
