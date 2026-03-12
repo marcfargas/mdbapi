@@ -88,7 +88,7 @@ func (p *Program) run() error {
 	// 1. Open database connections.
 	dbCfgs := make([]mdb.DBConfig, len(p.cfg.Databases))
 	for i, d := range p.cfg.Databases {
-		dbCfgs[i] = mdb.DBConfig{Alias: d.Alias, Path: d.Path}
+		dbCfgs[i] = mdb.DBConfig{Alias: d.Alias, Path: d.Path, Driver: d.Driver}
 	}
 	pool, err := mdb.NewPool(dbCfgs)
 	if err != nil {
@@ -200,9 +200,9 @@ func SetupLogging(logFile string) error {
 	}
 	w := &lumberjack.Logger{
 		Filename:   logFile,
-		MaxSize:    50,  // MB
+		MaxSize:    50, // MB
 		MaxBackups: 5,
-		MaxAge:     30,  // days
+		MaxAge:     30, // days
 		Compress:   true,
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{

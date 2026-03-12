@@ -56,9 +56,10 @@ type AuthConfig struct {
 //	# Recursive glob — all *.mdb anywhere under C:\Data
 //	- glob: 'C:\Data\**\*.mdb'
 type DatabaseConfig struct {
-	Alias string `yaml:"alias"`
-	Path  string `yaml:"path"`
-	Glob  string `yaml:"glob"`
+	Alias  string `yaml:"alias"`
+	Path   string `yaml:"path"`
+	Glob   string `yaml:"glob"`
+	Driver string `yaml:"driver,omitempty"` // optional ODBC driver override
 }
 
 type TunnelConfig struct {

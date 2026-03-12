@@ -11,16 +11,17 @@ import (
 const (
 	// MaxOpenConns is the per-database connection limit. Access file-level locking
 	// degrades quickly above ~5 concurrent readers; keep conservative.
-	MaxOpenConns = 3
-	MaxIdleConns = 1
+	MaxOpenConns    = 3
+	MaxIdleConns    = 1
 	ConnMaxLifetime = 10 * time.Minute
 	QueryTimeout    = 30 * time.Second
 )
 
 // DBConfig is the configuration for a single database alias.
 type DBConfig struct {
-	Alias string
-	Path  string
+	Alias  string
+	Path   string
+	Driver string // optional: explicit ODBC driver name; empty = auto-detect
 }
 
 // DBInfo is a summary of a registered database returned by the listing endpoint.
@@ -45,7 +46,7 @@ func NewPool(dbs []DBConfig) (*Pool, error) {
 		paths: make(map[string]string, len(dbs)),
 	}
 	for _, cfg := range dbs {
-		db, err := openDB(cfg.Path)
+		db, err := openDB(cfg.Path, cfg.Driver)
 		if err != nil {
 			// Close any already-opened connections before returning.
 			p.Close()
@@ -119,28 +120,6 @@ func (p *Pool) Close() {
 		_ = db.Close()
 		delete(p.dbs, alias)
 	}
-}
-
-// openDB creates an ODBC connection to an Access database (read-only).
-// The ReadOnly=1 parameter prevents exclusive locks and write operations
-// at the driver level — a belt-and-suspenders complement to SELECT-only SQL.
-func openDB(path string) (*sql.DB, error) {
-	connStr := fmt.Sprintf(
-		`DRIVER={Microsoft Access Driver (*.mdb, *.accdb)};DBQ=%s;ReadOnly=1;`,
-		path,
-	)
-	db, err := sql.Open("odbc", connStr)
-	if err != nil {
-		return nil, err
-	}
-	db.SetMaxOpenConns(MaxOpenConns)
-	db.SetMaxIdleConns(MaxIdleConns)
-	db.SetConnMaxLifetime(ConnMaxLifetime)
-	if err := db.Ping(); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	return db, nil
 }
 
 // ErrUnknownAlias is returned when a database alias is not in the pool.

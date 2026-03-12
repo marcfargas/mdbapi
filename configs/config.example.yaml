@@ -28,6 +28,7 @@ databases:
   # Explicit entry — a single database with a fixed alias.
   - alias: "inventory"
     path: 'C:\Data\Inventory.mdb'
+    # driver: "Microsoft Access Driver (*.mdb)"  # uncomment for Access 97 files if ACE 2016 is installed
 
   # - alias: "customers"
   #   path: 'C:\Data\Customers.accdb'

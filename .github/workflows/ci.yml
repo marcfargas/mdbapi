@@ -82,9 +82,9 @@ jobs:
           name: windows-amd64
           path: dist
 
-      - name: Install ACE driver
+      - name: Install ACE driver (2010, supports Access 97)
         shell: pwsh
-        run: powershell -ExecutionPolicy Bypass -NoProfile -File ci\install-ace.ps1
+        run: .\ci\install-ace.ps1 -Version 2010
 
       - name: Fetch test data
         shell: pwsh

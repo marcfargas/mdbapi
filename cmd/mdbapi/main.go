@@ -188,7 +188,7 @@ func checkCmd(args []string) {
 	fmt.Fprintln(w, "ALIAS\tPATH\tSTATUS\tTABLES")
 
 	for _, db := range cfg.Databases {
-		status, tableCount := testDatabase(db.Path)
+		status, tableCount := testDatabase(db.Path, db.Driver)
 		mark := "✓"
 		if strings.HasPrefix(status, "✗") {
 			mark = "✗"
@@ -305,8 +305,8 @@ func checkODBCDriver() error {
 	return err
 }
 
-func testDatabase(path string) (status string, tables string) {
-	pool, err := mdb.NewPool([]mdb.DBConfig{{Alias: "test", Path: path}})
+func testDatabase(path, driver string) (status string, tables string) {
+	pool, err := mdb.NewPool([]mdb.DBConfig{{Alias: "test", Path: path, Driver: driver}})
 	if err != nil {
 		return fmt.Sprintf("✗ %v", err), "-"
 	}
