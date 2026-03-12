@@ -59,6 +59,30 @@ databases:
   - glob: 'C:\Data\**\*.mdb'
 ```
 
+## Test it
+
+After starting the service, test from PowerShell:
+
+```powershell
+# Health check (no auth)
+Invoke-RestMethod http://localhost:8080/v1/health
+
+# List databases
+$key = "your-api-key"
+$headers = @{ "X-API-Key" = $key }
+Invoke-RestMethod http://localhost:8080/v1/ -Headers $headers
+
+# List tables
+Invoke-RestMethod http://localhost:8080/v1/inventory/tables -Headers $headers
+
+# Query rows
+Invoke-RestMethod "http://localhost:8080/v1/inventory/Products?limit=10" -Headers $headers
+
+# SQL passthrough
+Invoke-RestMethod http://localhost:8080/v1/inventory/query -Method POST -Headers $headers `
+  -ContentType "application/json" -Body '{"sql": "SELECT TOP 10 * FROM Products"}'
+```
+
 ## API
 
 Auth via `Authorization: Bearer <key>` or `X-API-Key: <key>`. All responses: `{"data": ...}` or `{"error": {"code": "...", "message": "..."}}`.
@@ -70,25 +94,6 @@ Auth via `Authorization: Bearer <key>` or `X-API-Key: <key>`. All responses: `{"
 | `GET /v1/{db}/tables` | Yes | List tables in a database |
 | `GET /v1/{db}/{table}` | Yes | Query rows. Params: `field=value`, `limit`, `offset`, `sort`, `sort_desc` |
 | `POST /v1/{db}/query` | Yes | SQL passthrough. Body: `{"sql": "SELECT ..."}`. Only SELECT/WITH allowed (403 otherwise) |
-
-### Example
-
-```bash
-curl -H "Authorization: Bearer $KEY" http://localhost:8080/v1/inventory/Products?limit=10
-```
-
-```json
-{
-  "data": {
-    "database": "inventory",
-    "table": "Products",
-    "count": 10,
-    "rows": [
-      {"id": 1, "name": "Widget", "active": true, "created": "2024-06-15T12:00:00Z"}
-    ]
-  }
-}
-```
 
 ## Read-only by design
 
@@ -112,13 +117,38 @@ mdbapi version      Print version
 
 ## Tailscale tunnel
 
-Build with `-tags tsnet` (or install with `-Tsnet`) to embed a Tailscale node directly in the service. The API becomes accessible on your tailnet without opening ports or configuring firewalls.
+Install with `-Tsnet` to embed a Tailscale node directly in the service. The API becomes accessible on your tailnet without opening ports or configuring firewalls.
 
 ```yaml
 tunnel:
   provider: tsnet
-  hostname: mdbapi          # appears as mdbapi.<tailnet>.ts.net
+  tsnet:
+    hostname: mdbapi                              # appears as mdbapi.<tailnet>.ts.net
+    auth_key: "${TS_AUTHKEY}"                      # pre-auth key from https://login.tailscale.com/admin/settings/keys
+    state_dir: 'C:\ProgramData\MDBService\tsnet'   # persistent node state
+    funnel: false                                  # true = expose publicly via Tailscale Funnel (port 443)
 ```
+
+Generate a [reusable auth key](https://login.tailscale.com/admin/settings/keys) (check "Reusable" and "Ephemeral" if you don't want stale nodes). Set it as an environment variable for the service:
+
+```powershell
+$regPath = "HKLM:\SYSTEM\CurrentControlSet\Services\MDBRestService"
+Set-ItemProperty -Path $regPath -Name Environment -Value @("TS_AUTHKEY=tskey-auth-...")
+Restart-Service MDBRestService
+```
+
+Once running, the API is reachable at `http://mdbapi.<tailnet>.ts.net:8080/v1/health` from any device on your tailnet.
+
+## Logs
+
+When running as a service, logs go to `C:\ProgramData\MDBService\mdbapi.log` (configurable via `service.log_file`). Rotated automatically (10 MB max, 3 backups).
+
+```powershell
+# Tail the log
+Get-Content C:\ProgramData\MDBService\mdbapi.log -Tail 50 -Wait
+```
+
+When running in foreground (`mdbapi run`), logs go to stderr.
 
 ## Auto-update
 
