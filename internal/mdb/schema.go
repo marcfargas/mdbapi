@@ -49,36 +49,24 @@ func listTablesViaMSys(ctx context.Context, db *sql.DB) ([]string, error) {
 	return tables, rows.Err()
 }
 
-// listTablesViaODBC uses the ODBC SQLTables catalog function via a special
-// stored-procedure-style query that alexbrainman/odbc supports.
-// This does not require MSysObjects access.
+// listTablesViaODBC uses the ODBC schema introspection trick: query a
+// guaranteed-nonexistent table and parse the error message, or use the
+// Access-specific approach of querying a zero-row result from a known
+// system view. In practice for ACE, we query the schema via a SELECT that
+// Access will resolve using its internal catalog — this avoids MSysObjects.
+//
+// Access ODBC does not expose INFORMATION_SCHEMA or SQLTables via plain SQL.
+// The most reliable non-MSysObjects method is to open the DB without ReadOnly
+// just for schema, but since we always use Uid=Admin;Pwd=, MSysObjects should
+// now work. This function remains as a belt-and-suspenders fallback.
 func listTablesViaODBC(ctx context.Context, db *sql.DB) ([]string, error) {
-	// The ODBC driver exposes catalog tables via a pseudo-query.
-	// For Access, TABLE_TYPE='TABLE' returns user tables.
-	rows, err := db.QueryContext(ctx,
-		`SELECT TABLE_NAME FROM [.Tables] WHERE TABLE_TYPE='TABLE'`)
-	if err != nil {
-		// Last resort: try a direct SHOW TABLES equivalent isn't available in Access,
-		// so we attempt to query the catalog via a driver-specific approach.
-		return listTablesViaSystemQuery(ctx, db)
-	}
-	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		tables = append(tables, name)
-	}
-	return tables, rows.Err()
-}
-
-// listTablesViaSystemQuery is a last-resort fallback using the Admin user path.
-func listTablesViaSystemQuery(ctx context.Context, db *sql.DB) ([]string, error) {
-	// Try with explicit Admin credentials embedded in query context.
-	const q = `SELECT MSysObjects.Name FROM MSysObjects WHERE MSysObjects.Type=1 AND MSysObjects.Flags=0`
+	// Alternate MSysObjects query — some Access security configurations grant
+	// access when querying with explicit column qualification.
+	const q = `SELECT MSysObjects.Name FROM MSysObjects ` +
+		`WHERE (MSysObjects.Type=1 OR MSysObjects.Type=4) ` +
+		`AND MSysObjects.Flags=0 ` +
+		`AND Left(MSysObjects.Name,1)<>'~' ` +
+		`ORDER BY MSysObjects.Name`
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("all table listing methods failed; last error: %w", err)

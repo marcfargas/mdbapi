@@ -48,7 +48,9 @@ func installedAccessDrivers() []string {
 
 		installed := make(map[string]bool, len(names))
 		for _, n := range names {
-			if strings.Contains(strings.ToLower(n), "access") {
+			// Match only MDB/ACCDB drivers, not dBASE or other "Access"-branded drivers
+			// (e.g. "Microsoft Access dBASE Driver (*.dbf, *.ndx, *.mdx)" must be excluded).
+			if strings.Contains(n, ".mdb") {
 				installed[n] = true
 			}
 		}
@@ -114,9 +116,13 @@ func openDB(path, explicitDriver string) (*sql.DB, error) {
 }
 
 // openDBWithDriver opens path using a specific named ODBC driver.
+// Uid=Admin;Pwd= is required for access to MSysObjects on databases without
+// workgroup security (the default for most Access files). Without it, table
+// listing via MSysObjects returns "no read permission" even though the file
+// is otherwise readable. ReadOnly=1 prevents write locks at the driver level.
 func openDBWithDriver(path, driverName string) (*sql.DB, error) {
 	connStr := fmt.Sprintf(
-		`DRIVER={%s};DBQ=%s;ReadOnly=1;`,
+		`DRIVER={%s};DBQ=%s;ReadOnly=1;Uid=Admin;Pwd=;`,
 		driverName, path,
 	)
 	db, err := sql.Open("odbc", connStr)
