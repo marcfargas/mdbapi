@@ -18,15 +18,6 @@ builds:
     ldflags:
       - -s -w -X main.Version={{.Version}}
 
-  - id: mdbapi-arm64
-    main: ./cmd/mdbapi
-    binary: mdbapi
-    goos: [windows]
-    goarch: [arm64]
-    env: [CGO_ENABLED=0]
-    ldflags:
-      - -s -w -X main.Version={{.Version}}
-
   # tsnet variant — includes Tailscale in-process node (~20 MB larger)
   # Must build on linux/amd64 (goreleaser CI) — cross-compilation from arm64 host unsupported.
   - id: mdbapi-tsnet-amd64
@@ -41,7 +32,7 @@ builds:
 
 archives:
   - id: standard
-    builds: [mdbapi-amd64, mdbapi-arm64]
+    builds: [mdbapi-amd64]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format: zip
     files:

@@ -53,14 +53,10 @@ if ($env:MDBAPI_VERSION -and -not $Version) { $Version = $env:MDBAPI_VERSION }
 if ($env:MDBAPI_DIR -and -not $InstallDir) { $InstallDir = $env:MDBAPI_DIR }
 
 # ---------------------------------------------------------------------------
-# Detect architecture
+# Architecture — amd64 only (ACE ODBC driver is not available for arm64)
 # ---------------------------------------------------------------------------
-$arch = switch ($env:PROCESSOR_ARCHITECTURE) {
-    'ARM64' { 'arm64' }
-    'AMD64' { 'amd64' }
-    default { 'amd64' }
-}
-Write-Host "mdbapi installer — Windows $arch" -ForegroundColor Cyan
+$arch = 'amd64'
+Write-Host "mdbapi installer — Windows amd64" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
 # Resolve GitHub auth token
@@ -99,31 +95,55 @@ try {
     if ($Develop) {
         Write-Host "Channel: develop (CI artifacts)" -ForegroundColor Yellow
         $artifactName = "windows-$arch"
-        $apiBase = "https://api.github.com/repos/$Owner/$Repo"
-        $headers = Get-GitHubHeaders
-
-        # Find the latest artifact with this name
-        Write-Host "Finding latest $artifactName artifact..."
-        try {
-            $artifacts = Invoke-RestMethod -Uri "$apiBase/actions/artifacts?name=$artifactName&per_page=1" `
-                                           -Headers $headers
-        } catch {
-            if ($_.Exception.Response.StatusCode -eq 404 -or $_.Exception.Response.StatusCode -eq 401) {
-                throw "Cannot access CI artifacts. For private repos, set `$env:GH_TOKEN or pass -Token."
-            }
-            throw
-        }
-        if (-not $artifacts.artifacts -or $artifacts.total_count -eq 0) {
-            throw "No CI artifacts found for '$artifactName'. Has CI run on develop recently?"
-        }
-        $artifact = $artifacts.artifacts[0]
-        $created = [datetime]::Parse($artifact.created_at).ToString('yyyy-MM-dd HH:mm')
-        Write-Host "  Found: $($artifact.name) ($created, $([math]::Round($artifact.size_in_bytes/1MB, 1)) MB)"
-
-        # Download the zip
         $zipPath = Join-Path $tmpDir 'artifact.zip'
-        Write-Host "Downloading..."
-        Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $zipPath
+        $downloaded = $false
+
+        # --- Method 1: nightly.link (no auth required, public repos) ---
+        $nightlyUrl = "https://nightly.link/$Owner/$Repo/workflows/ci.yml/develop/$artifactName.zip"
+        Write-Host "Trying nightly.link..."
+        try {
+            Invoke-WebRequest -Uri $nightlyUrl -OutFile $zipPath -UseBasicParsing -TimeoutSec 30
+            $size = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
+            Write-Host "  Downloaded via nightly.link ($size MB)" -ForegroundColor Green
+            $downloaded = $true
+        } catch {
+            Write-Host "  nightly.link unavailable, trying GitHub API..." -ForegroundColor DarkGray
+        }
+
+        # --- Method 2: GitHub API (needs token for artifact download) ---
+        if (-not $downloaded) {
+            $apiBase = "https://api.github.com/repos/$Owner/$Repo"
+            $headers = Get-GitHubHeaders
+
+            try {
+                $artifacts = Invoke-RestMethod -Uri "$apiBase/actions/artifacts?name=$artifactName&per_page=1" `
+                                               -Headers $headers
+            } catch {
+                if ($_.Exception.Response.StatusCode -eq 404 -or $_.Exception.Response.StatusCode -eq 401) {
+                    throw "Cannot access CI artifacts. Set `$env:GH_TOKEN or pass -Token."
+                }
+                throw
+            }
+            if (-not $artifacts.artifacts -or $artifacts.total_count -eq 0) {
+                throw "No CI artifacts found for '$artifactName'. Has CI run on develop recently?"
+            }
+            $artifact = $artifacts.artifacts[0]
+            $created = [datetime]::Parse($artifact.created_at).ToString('yyyy-MM-dd HH:mm')
+            Write-Host "  Found: $($artifact.name) ($created, $([math]::Round($artifact.size_in_bytes/1MB, 1)) MB)"
+
+            if (-not $Token) {
+                throw @"
+GitHub artifact download requires authentication.
+Options:
+  1. Set `$env:GH_TOKEN before running the installer
+  2. Pass -Token parameter
+  3. Wait for nightly.link to index the latest CI run
+"@
+            }
+
+            Write-Host "Downloading via GitHub API..."
+            Invoke-WebRequest -Uri $artifact.archive_download_url -Headers $headers -OutFile $zipPath
+        }
 
         # Extract
         Expand-Archive -Path $zipPath -DestinationPath $tmpDir -Force
