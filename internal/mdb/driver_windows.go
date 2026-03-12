@@ -76,44 +76,20 @@ func installedAccessDrivers() []string {
 	return driverCache
 }
 
-// isFallbackError returns true when the ODBC error is a format compatibility
-// or driver-not-installed error that warrants trying the next driver.
-func isFallbackError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "previous version") ||
-		strings.Contains(msg, "im002") || // Data source name not found
-		strings.Contains(msg, "im003") || // Driver load error
-		strings.Contains(msg, "could not be loaded")
-}
-
-// openDB opens an Access database with automatic driver fallback.
-// Returns the opened *sql.DB, the connection string that succeeded, and any error.
-// If explicitDriver is non-empty, only that driver is tried (no fallback).
+// openDB opens an Access database with the selected ODBC driver.
+// If explicitDriver is empty, it uses the first installed Access driver.
 func openDB(path, explicitDriver string) (*sql.DB, string, error) {
-	drivers := installedAccessDrivers()
-	if explicitDriver != "" {
-		drivers = []string{explicitDriver}
-	}
-
-	var lastErr error
-	for _, driverName := range drivers {
-		db, connStr, err := openDBWithDriver(path, driverName)
-		if err == nil {
-			return db, connStr, nil
+	driverName := explicitDriver
+	if driverName == "" {
+		drivers := installedAccessDrivers()
+		if len(drivers) == 0 {
+			return nil, "", fmt.Errorf(
+				"no Microsoft Access ODBC driver found; " +
+					"install Access Database Engine 2010 or 2016")
 		}
-		lastErr = err
-		if !isFallbackError(err) {
-			// Real error (file not found, permissions, etc.) — stop immediately.
-			return nil, "", fmt.Errorf("driver %q: %w", driverName, err)
-		}
-		// Format mismatch or driver not installed — try next.
+		driverName = drivers[0]
 	}
-
-	tried := strings.Join(drivers, ", ")
-	return nil, "", fmt.Errorf("no compatible Access driver found (tried: %s): %w", tried, lastErr)
+	return openDBWithDriver(path, driverName)
 }
 
 // openDBWithDriver opens path using a specific named ODBC driver.

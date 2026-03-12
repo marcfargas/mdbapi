@@ -13,66 +13,19 @@ type ColumnMeta struct {
 	Nullable bool
 }
 
-// ListTables returns user table names for the given database.
-// It tries MSysObjects first; falls back to the ODBC schema API on permission errors.
+// ListTables returns user table names via MSysObjects.
+// Used by cmd/probe for direct ODBC introspection.
+// PoolStore.ListTables uses the ODBC catalog API (catalog_windows.go) instead,
+// which works on all ACE versions without MSysObjects permissions.
 func ListTables(ctx context.Context, db *sql.DB) ([]string, error) {
-	tables, err := listTablesViaMSys(ctx, db)
-	if err != nil {
-		// MSysObjects is commonly permission-denied on production databases.
-		// Retry via ODBC catalog function.
-		tables, err = listTablesViaODBC(ctx, db)
-		if err != nil {
-			return nil, fmt.Errorf("list tables: %w", err)
-		}
-	}
-	return tables, nil
-}
-
-// listTablesViaMSys queries the Access system table directly.
-// Works on most Jet/ACE databases unless security hardening disables system table access.
-func listTablesViaMSys(ctx context.Context, db *sql.DB) ([]string, error) {
-	const q = `SELECT Name FROM MSysObjects WHERE (Type In (1,4)) AND (Flags In (0,-2147483648)) ORDER BY Name`
+	const q = `SELECT Name FROM MSysObjects ` +
+		`WHERE (Type In (1,4)) AND (Flags In (0,-2147483648)) ` +
+		`ORDER BY Name`
 	rows, err := db.QueryContext(ctx, q)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list tables (MSysObjects): %w", err)
 	}
 	defer rows.Close()
-
-	var tables []string
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return nil, err
-		}
-		tables = append(tables, name)
-	}
-	return tables, rows.Err()
-}
-
-// listTablesViaODBC uses the ODBC schema introspection trick: query a
-// guaranteed-nonexistent table and parse the error message, or use the
-// Access-specific approach of querying a zero-row result from a known
-// system view. In practice for ACE, we query the schema via a SELECT that
-// Access will resolve using its internal catalog — this avoids MSysObjects.
-//
-// Access ODBC does not expose INFORMATION_SCHEMA or SQLTables via plain SQL.
-// The most reliable non-MSysObjects method is to open the DB without ReadOnly
-// just for schema, but since we always use Uid=Admin;Pwd=, MSysObjects should
-// now work. This function remains as a belt-and-suspenders fallback.
-func listTablesViaODBC(ctx context.Context, db *sql.DB) ([]string, error) {
-	// Alternate MSysObjects query — some Access security configurations grant
-	// access when querying with explicit column qualification.
-	const q = `SELECT MSysObjects.Name FROM MSysObjects ` +
-		`WHERE (MSysObjects.Type=1 OR MSysObjects.Type=4) ` +
-		`AND MSysObjects.Flags=0 ` +
-		`AND Left(MSysObjects.Name,1)<>'~' ` +
-		`ORDER BY MSysObjects.Name`
-	rows, err := db.QueryContext(ctx, q)
-	if err != nil {
-		return nil, fmt.Errorf("all table listing methods failed; last error: %w", err)
-	}
-	defer rows.Close()
-
 	var tables []string
 	for rows.Next() {
 		var name string

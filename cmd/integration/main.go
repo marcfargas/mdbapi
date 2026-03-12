@@ -53,6 +53,18 @@ type checkRunner struct {
 	failed int
 }
 
+// StringSlice implements flag.Value for repeated -dir flags.
+type StringSlice []string
+
+func (s *StringSlice) String() string {
+	return strings.Join(*s, ", ")
+}
+
+func (s *StringSlice) Set(v string) error {
+	*s = append(*s, v)
+	return nil
+}
+
 func (r *checkRunner) pass(name, detail string) {
 	r.total++
 	if detail == "" {
@@ -69,46 +81,35 @@ func (r *checkRunner) fail(name string, err error) {
 }
 
 func main() {
-	dir := flag.String("dir", "", "directory to scan for .mdb files")
+	var dirs StringSlice
+	flag.Var(&dirs, "dir", "directory to scan for .mdb/.accdb files (repeatable)")
 	flag.Parse()
 
-	if *dir == "" {
+	if len(dirs) == 0 {
 		fatalf("-dir is required")
 	}
 
-	files, err := findMDBFiles(*dir)
-	if err != nil {
-		fatalf("scan dir: %v", err)
+	var files []string
+	for _, dir := range dirs {
+		found, err := findMDBFiles(dir)
+		if err != nil {
+			fatalf("scan %s: %v", dir, err)
+		}
+		files = append(files, found...)
 	}
 	if len(files) == 0 {
-		fatalf("no .mdb files found in %s", *dir)
+		fatalf("no .mdb/.accdb files found in %v", []string(dirs))
 	}
 
-	allCfgs := makeDBConfigs(files)
-	fmt.Printf("Found %d MDB files\n", len(allCfgs))
-
-	// Try to open each file individually; skip files that fail due to driver
-	// incompatibility (e.g. Access 97 files on a system with only ACE 2016).
-	// Only fail if zero files can be opened.
-	var dbCfgs []mdb.DBConfig
-	for _, cfg := range allCfgs {
-		p, err := mdb.NewPool([]mdb.DBConfig{cfg})
-		if err != nil {
-			fmt.Printf("  SKIP %s (%s): %v\n", cfg.Alias, cfg.Path, err)
-			continue
-		}
-		p.Close()
-		fmt.Printf("  OK   %s => %s\n", cfg.Alias, cfg.Path)
-		dbCfgs = append(dbCfgs, cfg)
-	}
-
-	if len(dbCfgs) == 0 {
-		fatalf("no MDB files could be opened — is an Access ODBC driver installed?")
+	dbCfgs := makeDBConfigs(files)
+	fmt.Printf("Found %d database files\n", len(dbCfgs))
+	for _, cfg := range dbCfgs {
+		fmt.Printf("  - %s => %s\n", cfg.Alias, cfg.Path)
 	}
 
 	pool, err := mdb.NewPool(dbCfgs)
 	if err != nil {
-		fatalf("create ODBC pool: %v", err)
+		fatalf("%v", err)
 	}
 	defer pool.Close()
 
@@ -506,7 +507,8 @@ func findMDBFiles(dir string) ([]string, error) {
 		if d.IsDir() {
 			return nil
 		}
-		if strings.EqualFold(filepath.Ext(path), ".mdb") {
+		ext := filepath.Ext(path)
+		if strings.EqualFold(ext, ".mdb") || strings.EqualFold(ext, ".accdb") {
 			files = append(files, path)
 		}
 		return nil

@@ -23,9 +23,9 @@ type Store interface {
 
 // PoolStore implements Store on top of a Pool.
 type PoolStore struct {
-	pool     *Pool
-	cacheMu  sync.Mutex
-	caches   map[string]*ColumnCache
+	pool    *Pool
+	cacheMu sync.Mutex
+	caches  map[string]*ColumnCache
 }
 
 // NewPoolStore wraps a Pool as a Store.
@@ -45,20 +45,11 @@ func (s *PoolStore) Databases() []DBInfo {
 }
 
 func (s *PoolStore) ListTables(ctx context.Context, alias string) ([]string, error) {
-	db, err := s.pool.Get(alias)
-	if err != nil {
-		return nil, err
+	connStr := s.pool.ConnStrFor(alias)
+	if connStr == "" {
+		return nil, ErrUnknownAlias{Alias: alias}
 	}
-	tables, err := ListTables(ctx, db)
-	if err != nil {
-		// MSysObjects access is blocked on ACE 2016 regardless of SQL credentials.
-		// Fall back to the ODBC SQLTables catalog function via direct Win32 API.
-		connStr := s.pool.ConnStrFor(alias)
-		if connStr != "" {
-			tables, err = listTablesViaODBCSyscall(ctx, connStr)
-		}
-	}
-	return tables, err
+	return listTablesViaODBCSyscall(ctx, connStr)
 }
 
 func (s *PoolStore) QueryTable(ctx context.Context, alias, tableName string, opts QueryOpts, maxRows int) (*QueryResult, error) {
