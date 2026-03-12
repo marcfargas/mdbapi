@@ -57,13 +57,23 @@ jobs:
             -o dist/amd64/integration.exe ./cmd/integration
 
       - name: Build windows/amd64 (tsnet)
-        run: CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" ./cmd/mdbapi
+        run: |
+          mkdir -p dist/tsnet
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags tsnet -ldflags="-s -w" \
+            -o dist/tsnet/mdbapi_tsnet.exe ./cmd/mdbapi
 
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
           name: windows-amd64
           path: dist/amd64/*.exe
+          retention-days: 90
+
+      - name: Upload tsnet binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-amd64-tsnet
+          path: dist/tsnet/*.exe
           retention-days: 90
 
   integration-ace2016:

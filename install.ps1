@@ -34,6 +34,7 @@
 [CmdletBinding()]
 param(
     [switch]$Develop,
+    [switch]$Tsnet,
     [string]$Version,
     [string]$InstallDir,
     [string]$Token
@@ -49,6 +50,7 @@ $Repo  = 'mdbapi'
 # Environment variable overrides (for irm | iex which can't pass params)
 # ---------------------------------------------------------------------------
 if ($env:MDBAPI_CHANNEL -eq 'develop') { $Develop = $true }
+if ($env:MDBAPI_TSNET -eq '1') { $Tsnet = $true }
 if ($env:MDBAPI_VERSION -and -not $Version) { $Version = $env:MDBAPI_VERSION }
 if ($env:MDBAPI_DIR -and -not $InstallDir) { $InstallDir = $env:MDBAPI_DIR }
 
@@ -93,8 +95,9 @@ New-Item -ItemType Directory -Path $tmpDir -Force | Out-Null
 
 try {
     if ($Develop) {
-        Write-Host "Channel: develop (CI artifacts)" -ForegroundColor Yellow
-        $artifactName = "windows-$arch"
+        $variant = if ($Tsnet) { 'tsnet' } else { 'standard' }
+        Write-Host "Channel: develop ($variant)" -ForegroundColor Yellow
+        $artifactName = if ($Tsnet) { "windows-$arch-tsnet" } else { "windows-$arch" }
         $zipPath = Join-Path $tmpDir 'artifact.zip'
         $downloaded = $false
 
@@ -164,8 +167,9 @@ Options:
 
         Write-Host "  Version: $($release.tag_name)"
 
-        # Find the right asset: mdbapi_<version>_windows_<arch>.zip
-        $assetName = "mdbapi_$($release.tag_name.TrimStart('v'))_windows_$arch.zip"
+        # Find the right asset
+        $suffix = if ($Tsnet) { "${arch}_tsnet" } else { $arch }
+        $assetName = "mdbapi_$($release.tag_name.TrimStart('v'))_windows_$suffix.zip"
         $asset = $release.assets | Where-Object { $_.name -eq $assetName }
         if (-not $asset) {
             $available = ($release.assets | ForEach-Object { $_.name }) -join ', '
@@ -187,13 +191,15 @@ Options:
     # Install binaries
     # ---------------------------------------------------------------------------
     $installed = @()
-    foreach ($exe in @('mdbapi.exe', 'probe.exe')) {
-        # Find the exe (might be in a subdirectory from goreleaser)
+    $binaries = if ($Tsnet) { @('mdbapi_tsnet.exe', 'mdbapi.exe') } else { @('mdbapi.exe', 'probe.exe') }
+    foreach ($exe in $binaries) {
         $found = Get-ChildItem -Path $tmpDir -Filter $exe -Recurse | Select-Object -First 1
         if ($found) {
-            $dest = Join-Path $InstallDir $exe
+            # tsnet binary installs as mdbapi.exe
+            $destName = if ($exe -eq 'mdbapi_tsnet.exe') { 'mdbapi.exe' } else { $exe }
+            $dest = Join-Path $InstallDir $destName
             Copy-Item -Path $found.FullName -Destination $dest -Force
-            $installed += $exe
+            $installed += $destName
         }
     }
 
