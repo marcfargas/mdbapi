@@ -213,11 +213,9 @@ Options:
     $cfgDir = 'C:\ProgramData\MDBService'
     $cfgPath = Join-Path $cfgDir 'config.yaml'
     if (-not (Test-Path $cfgPath)) {
-        $exampleCfg = Join-Path (Join-Path $tmpDir 'configs') 'config.example.yaml'
-        if (-not (Test-Path $exampleCfg)) {
-            # CI artifacts don't include config — use inline minimal config
-            $exampleCfg = $null
-        }
+        $configsDir = Join-Path $tmpDir 'configs'
+        $exampleCfg = Join-Path $configsDir 'config.example.yaml'
+        if (-not (Test-Path $exampleCfg)) { $exampleCfg = $null }
 
         if ($isAdmin) {
             New-Item -ItemType Directory -Path $cfgDir -Force | Out-Null
@@ -225,21 +223,21 @@ Options:
                 Copy-Item -Path $exampleCfg -Destination $cfgPath
                 Write-Host "  Sample config: $cfgPath" -ForegroundColor DarkGray
             } else {
-                # Write minimal config
-                @"
-# mdbapi configuration
-# See https://github.com/marcfargas/mdbapi for documentation.
-
-server:
-  listen: "127.0.0.1:8080"
-
-auth:
-  keys: []   # Run: mdbapi keygen -add-to-config
-
-databases: []
-  # - alias: mydb
-  #   path: C:\Data\MyDatabase.mdb
-"@ | Set-Content -Path $cfgPath -Encoding UTF8
+                $minCfg = @(
+                    '# mdbapi configuration'
+                    '# See https://github.com/marcfargas/mdbapi for documentation.'
+                    ''
+                    'server:'
+                    '  listen: "127.0.0.1:8080"'
+                    ''
+                    'auth:'
+                    '  keys: []   # Run: mdbapi keygen -add-to-config'
+                    ''
+                    'databases: []'
+                    '  # - alias: mydb'
+                    '  #   path: C:\Data\MyDatabase.mdb'
+                ) -join "`r`n"
+                [System.IO.File]::WriteAllText($cfgPath, $minCfg)
                 Write-Host "  Minimal config: $cfgPath" -ForegroundColor DarkGray
             }
         }
