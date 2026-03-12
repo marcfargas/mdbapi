@@ -213,7 +213,7 @@ Options:
     $cfgDir = 'C:\ProgramData\MDBService'
     $cfgPath = Join-Path $cfgDir 'config.yaml'
     if (-not (Test-Path $cfgPath)) {
-        $exampleCfg = Join-Path $tmpDir 'configs' 'config.example.yaml'
+        $exampleCfg = Join-Path (Join-Path $tmpDir 'configs') 'config.example.yaml'
         if (-not (Test-Path $exampleCfg)) {
             # CI artifacts don't include config — use inline minimal config
             $exampleCfg = $null
