@@ -80,6 +80,7 @@ type UpdaterConfig struct {
 	CheckInterval time.Duration `yaml:"check_interval"`
 	GithubToken   string        `yaml:"github_token"`
 	Channel       string        `yaml:"channel"` // "release" (default) or "develop"
+	Variant       string        `yaml:"variant"` // "standard" (default) or "tsnet"
 }
 
 type APIConfig struct {
@@ -165,6 +166,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Updater.Channel == "" {
 		cfg.Updater.Channel = "release"
+	}
+	if cfg.Updater.Variant == "" {
+		cfg.Updater.Variant = "standard"
 	}
 	if cfg.API.MaxRows == 0 {
 		cfg.API.MaxRows = 1000

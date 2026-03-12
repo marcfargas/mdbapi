@@ -30,18 +30,20 @@ type Updater struct {
 	checkInterval time.Duration
 	token         string
 	channel       string // "release" or "develop"
+	variant       string // "standard" or "tsnet"
 	restartSignal chan<- struct{}
 }
 
 // New creates an Updater. restartSignal is closed when an update is ready;
 // the caller is responsible for draining in-flight requests and calling os.Exit(1).
-func New(repo, currentVer string, interval time.Duration, token, channel string, restartSignal chan<- struct{}) *Updater {
+func New(repo, currentVer string, interval time.Duration, token, channel, variant string, restartSignal chan<- struct{}) *Updater {
 	return &Updater{
 		repo:          repo,
 		currentVer:    currentVer,
 		checkInterval: interval,
 		token:         token,
 		channel:       channel,
+		variant:       variant,
 		restartSignal: restartSignal,
 	}
 }
@@ -141,16 +143,9 @@ func (u *Updater) checkDevelop(ctx context.Context) {
 	}
 	exePath, _ = filepath.EvalSymlinks(exePath)
 
-	// Determine artifact name based on architecture.
-	arch := runtime.GOARCH
-	if arch == "386" {
-		arch = "386"
-	}
-	artifactName := fmt.Sprintf("windows-%s", arch)
-
-	// Check for tsnet build — if current binary name contains "tsnet", use tsnet artifact.
-	baseName := filepath.Base(exePath)
-	if baseName == "mdbapi_tsnet.exe" {
+	// Determine artifact name based on architecture and variant.
+	artifactName := fmt.Sprintf("windows-%s", runtime.GOARCH)
+	if u.variant == "tsnet" {
 		artifactName += "-tsnet"
 	}
 
@@ -277,11 +272,21 @@ func (u *Updater) downloadAndApply(ctx context.Context, url, exePath string) err
 	}
 	f.Close()
 
-	// Extract the target exe from the zip.
-	targetName := filepath.Base(exePath) // "mdbapi.exe" or "mdbapi_tsnet.exe"
-	extracted, err := extractFromZip(zipPath, targetName, tmpDir)
-	if err != nil {
-		return fmt.Errorf("extract: %w", err)
+	// Extract the exe from the zip. The tsnet artifact contains mdbapi_tsnet.exe
+	// but the installed binary is mdbapi.exe — try both names.
+	candidates := []string{"mdbapi.exe"}
+	if u.variant == "tsnet" {
+		candidates = []string{"mdbapi_tsnet.exe", "mdbapi.exe"}
+	}
+	var extracted string
+	for _, name := range candidates {
+		extracted, err = extractFromZip(zipPath, name, tmpDir)
+		if err == nil {
+			break
+		}
+	}
+	if extracted == "" {
+		return fmt.Errorf("extract: no matching binary in zip (tried %v)", candidates)
 	}
 
 	// Swap: rename current → .old, copy new → current.
