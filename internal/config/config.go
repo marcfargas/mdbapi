@@ -4,6 +4,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"regexp"
 	"strings"
@@ -31,16 +32,22 @@ type ServiceConfig struct {
 }
 
 type ServerConfig struct {
-	Listen       string        `yaml:"listen"`
-	ReadTimeout  time.Duration `yaml:"read_timeout"`
-	WriteTimeout time.Duration `yaml:"write_timeout"`
-	MaxBodySize  int64         `yaml:"max_body_size"`
-	TLSCert      string        `yaml:"tls_cert"`
-	TLSKey       string        `yaml:"tls_key"`
+	Listen         string        `yaml:"listen"`
+	ReadTimeout    time.Duration `yaml:"read_timeout"`
+	WriteTimeout   time.Duration `yaml:"write_timeout"`
+	IdleTimeout    time.Duration `yaml:"idle_timeout"`
+	RequestTimeout time.Duration `yaml:"request_timeout"`
+	MaxBodySize    int64         `yaml:"max_body_size"`
+	MaxHeaderBytes int           `yaml:"max_header_bytes"`
+	RateLimit      float64       `yaml:"rate_limit"`  // requests per second per IP (0 = unlimited)
+	RateBurst      int           `yaml:"rate_burst"`   // burst capacity per IP
+	TLSCert        string        `yaml:"tls_cert"`
+	TLSKey         string        `yaml:"tls_key"`
 }
 
 type AuthConfig struct {
-	Keys []string `yaml:"keys"`
+	Keys       []string `yaml:"keys"`
+	AllowedIPs []string `yaml:"allowed_ips"` // CIDRs or IPs; empty = allow all
 }
 
 // DatabaseConfig is either an explicit entry (Alias+Path) or a glob pattern.
@@ -158,6 +165,21 @@ func applyDefaults(cfg *Config) {
 	if cfg.Server.MaxBodySize == 0 {
 		cfg.Server.MaxBodySize = 1 << 20 // 1 MB
 	}
+	if cfg.Server.MaxHeaderBytes == 0 {
+		cfg.Server.MaxHeaderBytes = 8 << 10 // 8 KB
+	}
+	if cfg.Server.IdleTimeout == 0 {
+		cfg.Server.IdleTimeout = 120 * time.Second
+	}
+	if cfg.Server.RequestTimeout == 0 {
+		cfg.Server.RequestTimeout = 30 * time.Second
+	}
+	if cfg.Server.RateLimit == 0 {
+		cfg.Server.RateLimit = 10 // 10 req/s per IP
+	}
+	if cfg.Server.RateBurst == 0 {
+		cfg.Server.RateBurst = 20
+	}
 	if cfg.Tunnel.Provider == "" {
 		cfg.Tunnel.Provider = "none"
 	}
@@ -215,6 +237,19 @@ func validate(cfg *Config) error {
 			}
 			if db.Path == "" {
 				errs = append(errs, fmt.Sprintf("databases[%d]: path is required", i))
+			}
+		}
+	}
+
+	// Validate allowed_ips as valid IPs or CIDRs.
+	for i, entry := range cfg.Auth.AllowedIPs {
+		if strings.Contains(entry, "/") {
+			if _, _, err := net.ParseCIDR(entry); err != nil {
+				errs = append(errs, fmt.Sprintf("auth.allowed_ips[%d]: invalid CIDR %q: %v", i, entry, err))
+			}
+		} else {
+			if net.ParseIP(entry) == nil {
+				errs = append(errs, fmt.Sprintf("auth.allowed_ips[%d]: invalid IP %q", i, entry))
 			}
 		}
 	}

@@ -3,6 +3,7 @@ package api
 
 import (
 	"encoding/json"
+	"log/slog"
 	"net/http"
 )
 
@@ -33,8 +34,11 @@ func notFound(w http.ResponseWriter) {
 	writeError(w, http.StatusNotFound, "not_found", "resource not found")
 }
 
+// internalError logs the real error server-side and returns a generic message
+// to the client. Never expose internal details (paths, driver strings, etc.).
 func internalError(w http.ResponseWriter, err error) {
-	writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+	slog.Error("internal error", "err", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "internal server error")
 }
 
 func badRequest(w http.ResponseWriter, msg string) {

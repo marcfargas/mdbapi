@@ -8,7 +8,14 @@ server:
   listen: "127.0.0.1:8080"
   read_timeout: 30s
   write_timeout: 30s
-  max_body_size: 1048576  # 1 MB
+  idle_timeout: 120s       # close idle keep-alive connections after this
+  request_timeout: 30s     # per-request context deadline (kills slow ODBC queries)
+  max_body_size: 1048576   # 1 MB
+  max_header_bytes: 8192   # 8 KB — reject oversized headers early
+
+  # Per-IP rate limiting (token bucket). Applied to all requests including /health.
+  rate_limit: 10           # sustained requests per second per IP
+  rate_burst: 20           # burst capacity per IP
 
   # TLS for LAN access (optional). Leave empty for localhost-only use.
   # tls_cert: 'C:\ProgramData\MDBService\server.crt'
@@ -23,6 +30,12 @@ auth:
   keys:
     - "${MDBAPI_KEY}"
     # - "${MDBAPI_KEY_OLD}"  # remove after rotation
+
+  # IP allow list (optional). If set, only these IPs/CIDRs can connect.
+  # Empty list = allow all. Useful for tailnet-only access.
+  # allowed_ips:
+  #   - "100.64.0.0/10"     # Tailscale CGNAT range (all tailnet devices)
+  #   - "192.168.1.50"      # specific host
 
 databases:
   # Explicit entry — a single database with a fixed alias.

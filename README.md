@@ -95,11 +95,24 @@ Auth via `Authorization: Bearer <key>` or `X-API-Key: <key>`. All responses: `{"
 | `GET /v1/{db}/{table}` | Yes | Query rows. Params: `field=value`, `limit`, `offset`, `sort`, `sort_desc` |
 | `POST /v1/{db}/query` | Yes | SQL passthrough. Body: `{"sql": "SELECT ..."}`. Only SELECT/WITH allowed (403 otherwise) |
 
-## Read-only by design
+## Security
+
+### Read-only by design
 
 - SQL layer rejects anything that isn't `SELECT` or `WITH` → HTTP 403
 - `mdbapi fixacl` sets NTFS read-only ACLs on your database files
 - No ODBC write path exists in the code
+
+### HTTP hardening (safe for public exposure via Tailscale Funnel)
+
+- **Constant-time key comparison** — API keys are validated using SHA-256 hashing + `crypto/subtle.ConstantTimeCompare` to prevent timing attacks
+- **Per-IP rate limiting** — token bucket (default 10 req/s, burst 20); stale entries are garbage-collected automatically
+- **IP allow list** — optional CIDR/IP whitelist in `auth.allowed_ips`; empty = allow all
+- **Error sanitization** — internal errors are logged server-side but never exposed in HTTP responses
+- **Security headers** — `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`, `Cache-Control: no-store`, `Content-Security-Policy: default-src 'none'`
+- **Minimal health endpoint** — unauthenticated `/v1/health` returns only `{"status":"ok"}` with no version or database details
+- **Connection limits** — `IdleTimeout` (120s), `MaxHeaderBytes` (8KB), `RequestTimeout` (30s per-request context deadline)
+- **Auth failure delay** — 500ms sleep on failed auth to slow brute-force attempts
 
 ## CLI
 

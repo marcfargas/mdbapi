@@ -118,31 +118,25 @@ func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-// handleHealth returns service and database health for liveness/readiness probes.
+// handleHealth returns a minimal status for liveness/readiness probes.
+// This endpoint is unauthenticated, so it intentionally omits version
+// and database details to avoid information leakage.
 // GET /v1/health
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	dbs := s.store.Databases()
-	total := len(dbs)
-	okCount := 0
+	healthy := true
 	for _, db := range dbs {
-		if db.Status == "ok" {
-			okCount++
+		if db.Status != "ok" {
+			healthy = false
+			break
 		}
 	}
-	errorCount := total - okCount
 	status := "ok"
-	if errorCount > 0 {
+	if !healthy {
 		status = "degraded"
 	}
-
 	writeJSON(w, http.StatusOK, map[string]interface{}{
-		"status":  status,
-		"version": s.version,
-		"databases": map[string]int{
-			"total": total,
-			"ok":    okCount,
-			"error": errorCount,
-		},
+		"status": status,
 	})
 }
 

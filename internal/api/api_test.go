@@ -84,10 +84,15 @@ func validateReadOnlyForTest(query string) error {
 }
 
 // newTestServer creates a Server+Handler with a single test key.
+// Rate limiting is disabled in tests to avoid flaky timing-dependent failures.
 func newTestServer(store mdb.Store) http.Handler {
 	s := NewServer(store, 1000, "test")
 	key := strings.Repeat("k", 32)
-	return s.Handler([]string{key}, 1<<20)
+	return s.Handler(HandlerConfig{
+		Keys:         []string{key},
+		MaxBodyBytes: 1 << 20,
+		RateLimit:    0, // disabled in tests
+	})
 }
 
 func authHeader() string { return "Bearer " + strings.Repeat("k", 32) }
@@ -327,18 +332,12 @@ func TestHealth_NoAuth(t *testing.T) {
 		if data["status"] != "ok" {
 			t.Errorf("status = %v, want ok", data["status"])
 		}
-		if data["version"] != "test" {
-			t.Errorf("version = %v, want test", data["version"])
+		// Health endpoint must NOT expose version or database details.
+		if data["version"] != nil {
+			t.Errorf("health should not expose version, got %v", data["version"])
 		}
-		dbSummary := data["databases"].(map[string]interface{})
-		if dbSummary["total"].(float64) != 2 {
-			t.Errorf("databases.total = %v, want 2", dbSummary["total"])
-		}
-		if dbSummary["ok"].(float64) != 2 {
-			t.Errorf("databases.ok = %v, want 2", dbSummary["ok"])
-		}
-		if dbSummary["error"].(float64) != 0 {
-			t.Errorf("databases.error = %v, want 0", dbSummary["error"])
+		if data["databases"] != nil {
+			t.Errorf("health should not expose database details, got %v", data["databases"])
 		}
 	})
 
@@ -366,17 +365,175 @@ func TestHealth_NoAuth(t *testing.T) {
 		if data["status"] != "degraded" {
 			t.Errorf("status = %v, want degraded", data["status"])
 		}
-		dbSummary := data["databases"].(map[string]interface{})
-		if dbSummary["total"].(float64) != 3 {
-			t.Errorf("databases.total = %v, want 3", dbSummary["total"])
+	})
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	store := &mockStore{aliases: []string{}}
+	h := newTestServer(store)
+
+	req := httptest.NewRequest("GET", "/v1/health", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	checks := map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"X-Frame-Options":       "DENY",
+		"Cache-Control":         "no-store",
+		"Content-Security-Policy": "default-src 'none'",
+	}
+	for header, want := range checks {
+		if got := w.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
 		}
-		if dbSummary["ok"].(float64) != 2 {
-			t.Errorf("databases.ok = %v, want 2", dbSummary["ok"])
-		}
-		if dbSummary["error"].(float64) != 1 {
-			t.Errorf("databases.error = %v, want 1", dbSummary["error"])
+	}
+}
+
+func TestIPAllowList(t *testing.T) {
+	store := &mockStore{aliases: []string{}}
+	s := NewServer(store, 1000, "test")
+	key := strings.Repeat("k", 32)
+
+	t.Run("allowed IP passes", func(t *testing.T) {
+		h := s.Handler(HandlerConfig{
+			Keys:         []string{key},
+			MaxBodyBytes: 1 << 20,
+			AllowedIPs:   []string{"192.0.2.1"},
+		})
+
+		req := httptest.NewRequest("GET", "/v1/health", nil)
+		req.RemoteAddr = "192.0.2.1:12345"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200 for allowed IP, got %d", w.Code)
 		}
 	})
+
+	t.Run("blocked IP rejected", func(t *testing.T) {
+		h := s.Handler(HandlerConfig{
+			Keys:         []string{key},
+			MaxBodyBytes: 1 << 20,
+			AllowedIPs:   []string{"192.0.2.1"},
+		})
+
+		req := httptest.NewRequest("GET", "/v1/health", nil)
+		req.RemoteAddr = "10.0.0.99:12345"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("expected 403 for blocked IP, got %d", w.Code)
+		}
+	})
+
+	t.Run("CIDR match", func(t *testing.T) {
+		h := s.Handler(HandlerConfig{
+			Keys:         []string{key},
+			MaxBodyBytes: 1 << 20,
+			AllowedIPs:   []string{"10.0.0.0/8"},
+		})
+
+		req := httptest.NewRequest("GET", "/v1/health", nil)
+		req.RemoteAddr = "10.99.1.42:12345"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200 for CIDR-matched IP, got %d", w.Code)
+		}
+	})
+
+	t.Run("empty allow list allows all", func(t *testing.T) {
+		h := s.Handler(HandlerConfig{
+			Keys:         []string{key},
+			MaxBodyBytes: 1 << 20,
+			AllowedIPs:   nil,
+		})
+
+		req := httptest.NewRequest("GET", "/v1/health", nil)
+		req.RemoteAddr = "203.0.113.50:9999"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+
+		if w.Code != http.StatusOK {
+			t.Errorf("expected 200 when allow list is empty, got %d", w.Code)
+		}
+	})
+}
+
+func TestRateLimiting(t *testing.T) {
+	store := &mockStore{aliases: []string{}}
+	s := NewServer(store, 1000, "test")
+	key := strings.Repeat("k", 32)
+
+	// Very low limit: 1 req/s, burst 2.
+	h := s.Handler(HandlerConfig{
+		Keys:         []string{key},
+		MaxBodyBytes: 1 << 20,
+		RateLimit:    1,
+		RateBurst:    2,
+	})
+
+	// First 2 requests (burst) should succeed.
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest("GET", "/v1/health", nil)
+		req.RemoteAddr = "192.0.2.1:12345"
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, req)
+		if w.Code != http.StatusOK {
+			t.Fatalf("request %d: expected 200, got %d", i+1, w.Code)
+		}
+	}
+
+	// Third request should be rate-limited.
+	req := httptest.NewRequest("GET", "/v1/health", nil)
+	req.RemoteAddr = "192.0.2.1:12345"
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("expected 429 after burst exhausted, got %d", w.Code)
+	}
+	if w.Header().Get("Retry-After") == "" {
+		t.Error("expected Retry-After header on 429 response")
+	}
+
+	// Different IP should still work (per-IP limiting).
+	req2 := httptest.NewRequest("GET", "/v1/health", nil)
+	req2.RemoteAddr = "192.0.2.99:12345"
+	w2 := httptest.NewRecorder()
+	h.ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Errorf("different IP should not be rate-limited, got %d", w2.Code)
+	}
+}
+
+func TestInternalErrorDoesNotLeakDetails(t *testing.T) {
+	store := &mockStore{
+		aliases: []string{"inv"},
+		tables:  map[string][]string{"inv": {"Products"}},
+		err:     fmt.Errorf("ODBC: driver not found at C:\\Windows\\system32\\aceodbc.dll"),
+	}
+	h := newTestServer(store)
+
+	req := httptest.NewRequest("GET", "/v1/inv/tables", nil)
+	req.Header.Set("Authorization", authHeader())
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", w.Code)
+	}
+	// Response must not contain the ODBC error details.
+	body := w.Body.String()
+	if strings.Contains(body, "ODBC") || strings.Contains(body, "aceodbc") || strings.Contains(body, "C:\\") {
+		t.Errorf("internal error response leaks details: %s", body)
+	}
+	// Should contain the generic message.
+	if !strings.Contains(body, "internal server error") {
+		t.Errorf("expected generic 'internal server error', got: %s", body)
+	}
 }
 
 func TestXAPIKeyHeader(t *testing.T) {

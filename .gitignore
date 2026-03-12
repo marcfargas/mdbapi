@@ -16,3 +16,4 @@ tsnet-state/
 # Test data — not committed
 testdata/
 test-data/
+frpc samples.zip

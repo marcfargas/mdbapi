@@ -99,7 +99,14 @@ func (p *Program) run() error {
 	// 2. Build HTTP server via Store interface.
 	store := mdb.NewPoolStore(pool)
 	p.server = api.NewServer(store, p.cfg.API.MaxRows, p.version)
-	handler := p.server.Handler(p.cfg.Auth.Keys, p.cfg.Server.MaxBodySize)
+	handler := p.server.Handler(api.HandlerConfig{
+		Keys:           p.cfg.Auth.Keys,
+		MaxBodyBytes:   p.cfg.Server.MaxBodySize,
+		AllowedIPs:     p.cfg.Auth.AllowedIPs,
+		RateLimit:      p.cfg.Server.RateLimit,
+		RateBurst:      p.cfg.Server.RateBurst,
+		RequestTimeout: p.cfg.Server.RequestTimeout,
+	})
 
 	// 3. Create tunnel provider and bind listener.
 	tunProv, err := tunnel.New(p.cfg.Tunnel)
@@ -114,9 +121,11 @@ func (p *Program) run() error {
 	}
 
 	p.httpSrv = &http.Server{
-		Handler:      handler,
-		ReadTimeout:  p.cfg.Server.ReadTimeout,
-		WriteTimeout: p.cfg.Server.WriteTimeout,
+		Handler:        handler,
+		ReadTimeout:    p.cfg.Server.ReadTimeout,
+		WriteTimeout:   p.cfg.Server.WriteTimeout,
+		IdleTimeout:    p.cfg.Server.IdleTimeout,
+		MaxHeaderBytes: p.cfg.Server.MaxHeaderBytes,
 	}
 
 	slog.Info("service started",
