@@ -115,7 +115,11 @@ func main() {
 
 	store := mdb.NewPoolStore(pool)
 	server := api.NewServer(store, maxRows, "integration")
-	handler := server.Handler([]string{testAPIKey}, maxBodyBytes)
+	handler := server.Handler(api.HandlerConfig{
+		Keys:         []string{testAPIKey},
+		MaxBodyBytes: maxBodyBytes,
+		RateLimit:    0, // no rate limiting in integration tests
+	})
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
