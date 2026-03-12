@@ -146,7 +146,9 @@ func listTablesViaODBCSyscall(ctx context.Context, connStr string) ([]string, er
 
 func sqlCall(proc *windows.LazyProc, args ...uintptr) uintptr {
 	r, _, _ := proc.Call(args...)
-	return r
+	// SQLRETURN is a 16-bit signed integer. On 32-bit Windows the upper
+	// bits of the uintptr return value may contain garbage.
+	return r & 0xFFFF
 }
 
 func sqlOK(rc uintptr) bool {
