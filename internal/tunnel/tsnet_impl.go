@@ -19,12 +19,9 @@ func newTsnet(cfg config.TsnetConfig) (Provider, error) {
 	if cfg.Hostname == "" {
 		return nil, fmt.Errorf("tsnet: hostname is required")
 	}
-	if cfg.AuthKey == "" {
-		return nil, fmt.Errorf("tsnet: auth_key is required (use env var TS_AUTHKEY)")
-	}
 	srv := &tsnet.Server{
 		Hostname: cfg.Hostname,
-		AuthKey:  cfg.AuthKey,
+		AuthKey:  cfg.AuthKey, // optional after initial auth; tsnet re-uses state_dir
 		Dir:      cfg.StateDir,
 	}
 	return &tsnetProvider{srv: srv, funnel: cfg.Funnel}, nil
