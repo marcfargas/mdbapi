@@ -116,13 +116,19 @@ func openDB(path, explicitDriver string) (*sql.DB, error) {
 }
 
 // openDBWithDriver opens path using a specific named ODBC driver.
-// Uid=Admin;Pwd= is required for access to MSysObjects on databases without
-// workgroup security (the default for most Access files). Without it, table
-// listing via MSysObjects returns "no read permission" even though the file
-// is otherwise readable. ReadOnly=1 prevents write locks at the driver level.
+//
+// ReadOnly=1 is intentionally omitted: ACE 2016 blocks MSysObjects access
+// (needed for table listing) when ReadOnly=1 is set, regardless of Uid/Pwd.
+// Write protection is enforced at the SQL layer (SELECT-only validation in
+// query.go) and at the OS layer (NTFS read-only permissions on the data dir
+// via mdbapi fixacl). The .ldb lock file created by ACE is harmless and is
+// cleaned up when the connection closes.
+//
+// Uid=Admin;Pwd= grants access to MSysObjects on databases without workgroup
+// security (the default for the vast majority of Access files in the wild).
 func openDBWithDriver(path, driverName string) (*sql.DB, error) {
 	connStr := fmt.Sprintf(
-		`DRIVER={%s};DBQ=%s;ReadOnly=1;Uid=Admin;Pwd=;`,
+		`DRIVER={%s};DBQ=%s;Uid=Admin;Pwd=;`,
 		driverName, path,
 	)
 	db, err := sql.Open("odbc", connStr)
