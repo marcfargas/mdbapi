@@ -134,6 +134,7 @@ func (p *Program) run() error {
 			p.version,
 			p.cfg.Updater.CheckInterval,
 			p.cfg.Updater.GithubToken,
+			p.cfg.Updater.Channel,
 			p.restartSignal,
 		)
 		go u.Start(ctx)

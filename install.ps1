@@ -191,6 +191,16 @@ Options:
     }
 
     # ---------------------------------------------------------------------------
+    # Stop running service (if upgrading)
+    # ---------------------------------------------------------------------------
+    $svc = Get-Service -Name MDBRestService -ErrorAction SilentlyContinue
+    if ($svc -and $svc.Status -eq 'Running') {
+        Write-Host "Stopping MDBRestService..." -ForegroundColor Yellow
+        Stop-Service MDBRestService -Force
+        Start-Sleep -Seconds 2
+    }
+
+    # ---------------------------------------------------------------------------
     # Install binaries
     # ---------------------------------------------------------------------------
     $installed = @()
@@ -269,12 +279,21 @@ Options:
     $ver = & $mdbapi version 2>$null
     if ($ver) { Write-Host "Version:   $ver" -ForegroundColor Green }
 
-    Write-Host ""
-    Write-Host "Next steps:" -ForegroundColor Cyan
-    Write-Host "  1. Edit config:    notepad $cfgPath"
-    Write-Host "  2. Generate key:   mdbapi keygen -add-to-config"
-    Write-Host "  3. Install service: mdbapi install  (run as admin)"
-    Write-Host "  4. Start service:  Start-Service MDBRestService"
+    # Restart service if it was running before upgrade
+    if ($svc -and $svc.Status -eq 'Running') {
+        Write-Host "Restarting MDBRestService..." -ForegroundColor Yellow
+        Start-Service MDBRestService
+        Write-Host "  Service restarted." -ForegroundColor Green
+    } elseif ($svc) {
+        Write-Host "  Service exists but was stopped. Start with: Start-Service MDBRestService" -ForegroundColor DarkGray
+    } else {
+        Write-Host ""
+        Write-Host "Next steps:" -ForegroundColor Cyan
+        Write-Host "  1. Edit config:    notepad $cfgPath"
+        Write-Host "  2. Generate key:   mdbapi keygen -add-to-config"
+        Write-Host "  3. Install service: mdbapi install  (run as admin)"
+        Write-Host "  4. Start service:  Start-Service MDBRestService"
+    }
     Write-Host ""
 
 } finally {
