@@ -3,6 +3,7 @@ package mdb
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"sync"
 	"time"
 	// "odbc" driver is registered via driver_windows_amd64.go
@@ -26,9 +27,10 @@ type DBConfig struct {
 
 // DBInfo is a summary of a registered database returned by the listing endpoint.
 type DBInfo struct {
-	Alias  string `json:"alias"`
-	Path   string `json:"path"`
-	Status string `json:"status"` // "ok" or "error: <message>"
+	Alias      string     `json:"alias"`
+	Path       string     `json:"path"`
+	Status     string     `json:"status"`                // "ok" or "error: <message>"
+	ModifiedAt *time.Time `json:"modified_at,omitempty"` // file mtime; nil if stat fails
 }
 
 // Pool manages a map of *sql.DB keyed by alias.
@@ -106,6 +108,10 @@ func (p *Pool) Databases() []DBInfo {
 		}
 		if err := db.Ping(); err != nil {
 			info.Status = "error: " + err.Error()
+		}
+		if fi, err := os.Stat(p.paths[alias]); err == nil {
+			t := fi.ModTime()
+			info.ModifiedAt = &t
 		}
 		out = append(out, info)
 	}

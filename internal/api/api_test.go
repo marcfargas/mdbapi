@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/marcfargas/mdbapi/internal/mdb"
 )
@@ -134,6 +135,31 @@ func TestListDatabases(t *testing.T) {
 		if entry["status"] != "ok" {
 			t.Errorf("expected status ok, got %q", entry["status"])
 		}
+	}
+}
+
+func TestListDatabases_HasModifiedAt(t *testing.T) {
+	now := time.Now().Truncate(time.Second)
+	store := &mockStore{databases: []mdb.DBInfo{
+		{Alias: "db1", Path: `C:\data\db1.mdb`, Status: "ok", ModifiedAt: &now},
+	}}
+	h := newTestServer(store)
+
+	req := httptest.NewRequest("GET", "/v1/", nil)
+	req.Header.Set("Authorization", authHeader())
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+	var body map[string]interface{}
+	_ = json.Unmarshal(w.Body.Bytes(), &body)
+	data := body["data"].(map[string]interface{})
+	dbs := data["databases"].([]interface{})
+	entry := dbs[0].(map[string]interface{})
+	if entry["modified_at"] == nil {
+		t.Error("expected modified_at field in database entry")
 	}
 }
 
