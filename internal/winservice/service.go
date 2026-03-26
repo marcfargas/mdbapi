@@ -19,6 +19,7 @@ import (
 	"github.com/marcfargas/mdbapi/internal/mdb"
 	"github.com/marcfargas/mdbapi/internal/tunnel"
 	"github.com/marcfargas/mdbapi/internal/updater"
+	"github.com/marcfargas/mdbapi/internal/watcher"
 	"golang.org/x/sys/windows/svc/mgr"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
@@ -35,6 +36,7 @@ type Program struct {
 	tunProv       tunnel.Provider
 	cancelCtx     context.CancelFunc
 	restartSignal chan struct{}
+	watcher       *watcher.Watcher
 }
 
 // NewProgram creates a service Program from config.
@@ -158,6 +160,18 @@ func (p *Program) run() error {
 			case <-ctx.Done():
 			}
 		}()
+	}
+
+	// 4b. Start glob watcher for dynamic database discovery.
+	if len(p.cfg.GlobEntries) > 0 {
+		w, err := watcher.New(p.cfg.GlobEntries, pool, 30*time.Second)
+		if err != nil {
+			slog.Warn("glob watcher init failed", "err", err)
+		} else {
+			p.watcher = w
+			go w.Run(ctx)
+			slog.Info("glob watcher started", "patterns", len(p.cfg.GlobEntries))
+		}
 	}
 
 	// 5. Serve — blocks until Shutdown is called.
