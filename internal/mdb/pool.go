@@ -139,6 +139,24 @@ func (p *Pool) Close() {
 	}
 }
 
+// Register opens and adds a new database to the pool at runtime.
+// If the alias already exists, it's a no-op (returns nil).
+func (p *Pool) Register(cfg DBConfig) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if _, exists := p.dbs[cfg.Alias]; exists {
+		return nil // already registered
+	}
+	db, connStr, err := openDB(cfg.Path, cfg.Driver)
+	if err != nil {
+		return fmt.Errorf("open database %q (%s): %w", cfg.Alias, cfg.Path, err)
+	}
+	p.dbs[cfg.Alias] = db
+	p.paths[cfg.Alias] = cfg.Path
+	p.connStrs[cfg.Alias] = connStr
+	return nil
+}
+
 // ErrUnknownAlias is returned when a database alias is not in the pool.
 type ErrUnknownAlias struct {
 	Alias string
