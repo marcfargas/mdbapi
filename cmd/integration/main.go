@@ -114,7 +114,7 @@ func main() {
 	defer pool.Close()
 
 	store := mdb.NewPoolStore(pool)
-	server := api.NewServer(store, maxRows, "integration")
+	server := api.NewServer(store, maxRows, "integration", "test")
 	handler := server.Handler(api.HandlerConfig{
 		Keys:         []string{testAPIKey},
 		MaxBodyBytes: maxBodyBytes,

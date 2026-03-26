@@ -92,7 +92,7 @@ func runCmd(args []string) {
 		}
 	}
 
-	prg := winservice.NewProgram(cfg, Version)
+	prg := winservice.NewProgram(cfg, Version, Commit)
 	svcCfg := serviceConfig(cfg)
 	svc, err := service.New(prg, svcCfg)
 	if err != nil {
@@ -114,7 +114,7 @@ func installCmd(args []string) {
 		fatalf("config: %v", err)
 	}
 
-	prg := winservice.NewProgram(cfg, Version)
+	prg := winservice.NewProgram(cfg, Version, Commit)
 	svcCfg := serviceConfig(cfg)
 	svcCfg.Arguments = []string{"run", "-config", *cfgPath}
 
@@ -140,7 +140,7 @@ func lifecycleCmd(action string, args []string) {
 		fatalf("config: %v", err)
 	}
 
-	prg := winservice.NewProgram(cfg, Version)
+	prg := winservice.NewProgram(cfg, Version, Commit)
 	svc, err := service.New(prg, serviceConfig(cfg))
 	if err != nil {
 		fatalf("service init: %v", err)

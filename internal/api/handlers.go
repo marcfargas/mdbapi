@@ -115,6 +115,7 @@ func (s *Server) handleExecuteSQL(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVersion(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"version": s.version,
+		"commit":  s.commit,
 	})
 }
 

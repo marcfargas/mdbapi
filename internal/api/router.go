@@ -39,14 +39,16 @@ type Server struct {
 	store   mdb.Store
 	maxRows int
 	version string
+	commit  string
 }
 
 // NewServer creates a new API server.
-func NewServer(store mdb.Store, maxRows int, version string) *Server {
+func NewServer(store mdb.Store, maxRows int, version, commit string) *Server {
 	return &Server{
 		store:   store,
 		maxRows: maxRows,
 		version: version,
+		commit:  commit,
 	}
 }
 

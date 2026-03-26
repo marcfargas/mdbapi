@@ -28,6 +28,7 @@ import (
 type Program struct {
 	cfg     *config.Config
 	version string
+	commit  string
 
 	// set during Start
 	pool          *mdb.Pool
@@ -40,8 +41,8 @@ type Program struct {
 }
 
 // NewProgram creates a service Program from config.
-func NewProgram(cfg *config.Config, version string) *Program {
-	return &Program{cfg: cfg, version: version}
+func NewProgram(cfg *config.Config, version, commit string) *Program {
+	return &Program{cfg: cfg, version: version, commit: commit}
 }
 
 // Start is called by the SCM or on console run. Must not block.
@@ -100,7 +101,7 @@ func (p *Program) run() error {
 
 	// 2. Build HTTP server via Store interface.
 	store := mdb.NewPoolStore(pool)
-	p.server = api.NewServer(store, p.cfg.API.MaxRows, p.version)
+	p.server = api.NewServer(store, p.cfg.API.MaxRows, p.version, p.commit)
 	handler := p.server.Handler(api.HandlerConfig{
 		Keys:           p.cfg.Auth.Keys,
 		MaxBodyBytes:   p.cfg.Server.MaxBodySize,

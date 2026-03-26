@@ -87,7 +87,7 @@ func validateReadOnlyForTest(query string) error {
 // newTestServer creates a Server+Handler with a single test key.
 // Rate limiting is disabled in tests to avoid flaky timing-dependent failures.
 func newTestServer(store mdb.Store) http.Handler {
-	s := NewServer(store, 1000, "test")
+	s := NewServer(store, 1000, "test", "abc1234")
 	key := strings.Repeat("k", 32)
 	return s.Handler(HandlerConfig{
 		Keys:         []string{key},
@@ -332,6 +332,9 @@ func TestVersion(t *testing.T) {
 	if data["version"] != "test" {
 		t.Errorf("version = %v, want test", data["version"])
 	}
+	if data["commit"] != "abc1234" {
+		t.Errorf("commit = %v, want abc1234", data["commit"])
+	}
 }
 
 func TestHealth_NoAuth(t *testing.T) {
@@ -417,7 +420,7 @@ func TestSecurityHeaders(t *testing.T) {
 
 func TestIPAllowList(t *testing.T) {
 	store := &mockStore{aliases: []string{}}
-	s := NewServer(store, 1000, "test")
+	s := NewServer(store, 1000, "test", "abc1234")
 	key := strings.Repeat("k", 32)
 
 	t.Run("allowed IP passes", func(t *testing.T) {
@@ -491,7 +494,7 @@ func TestIPAllowList(t *testing.T) {
 
 func TestRateLimiting(t *testing.T) {
 	store := &mockStore{aliases: []string{}}
-	s := NewServer(store, 1000, "test")
+	s := NewServer(store, 1000, "test", "abc1234")
 	key := strings.Repeat("k", 32)
 
 	// Very low limit: 1 req/s, burst 2.
