@@ -562,6 +562,32 @@ func TestInternalErrorDoesNotLeakDetails(t *testing.T) {
 	}
 }
 
+func TestOpenAPIEndpoint(t *testing.T) {
+	store := &mockStore{aliases: []string{}}
+	h := newTestServer(store)
+
+	req := httptest.NewRequest("GET", "/v1/openapi.json", nil)
+	// No auth — should be public like /health.
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body: %s", w.Code, w.Body.String())
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/json" {
+		t.Errorf("Content-Type = %q, want application/json", ct)
+	}
+	// Must be valid JSON.
+	var parsed map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("response is not valid JSON: %v", err)
+	}
+	// Must have openapi version field.
+	if parsed["openapi"] == nil {
+		t.Error("expected 'openapi' field in response")
+	}
+}
+
 func TestXAPIKeyHeader(t *testing.T) {
 	store := &mockStore{aliases: []string{}}
 	h := newTestServer(store)

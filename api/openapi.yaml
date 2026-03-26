@@ -1,0 +1,317 @@
+openapi: "3.1.0"
+info:
+  title: mdbapi
+  description: Read-only REST API for Microsoft Access databases (.mdb/.accdb)
+  version: "1.0.0"
+  license:
+    name: MIT
+
+servers:
+  - url: /v1
+
+security:
+  - ApiKeyHeader: []
+  - BearerAuth: []
+
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      description: Returns service status. No authentication required.
+      security: []
+      responses:
+        "200":
+          description: Service status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      status:
+                        type: string
+                        enum: [ok, degraded]
+                    required: [status]
+
+  /v1/openapi.json:
+    get:
+      operationId: getOpenAPISpec
+      summary: OpenAPI specification
+      description: Returns this API specification as JSON. No authentication required.
+      security: []
+      responses:
+        "200":
+          description: OpenAPI 3.1 specification
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /v1/:
+    get:
+      operationId: listDatabases
+      summary: List databases
+      description: Returns all exposed databases with alias, path, connection status, and file modification time.
+      responses:
+        "200":
+          description: Database list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      databases:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/DatabaseInfo"
+                    required: [databases]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/version:
+    get:
+      operationId: getVersion
+      summary: Binary version
+      responses:
+        "200":
+          description: Version info
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      version:
+                        type: string
+                    required: [version]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /v1/{db}/tables:
+    get:
+      operationId: listTables
+      summary: List tables
+      description: Returns all user table names in the specified database.
+      parameters:
+        - $ref: "#/components/parameters/db"
+      responses:
+        "200":
+          description: Table list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      database:
+                        type: string
+                      tables:
+                        type: array
+                        items:
+                          type: string
+                    required: [database, tables]
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/{db}/{table}:
+    get:
+      operationId: queryTable
+      summary: Query rows
+      description: |
+        Returns rows from the specified table with optional filtering, pagination, and sorting.
+        Any query parameter not in the reserved list is treated as a column=value filter.
+      parameters:
+        - $ref: "#/components/parameters/db"
+        - name: table
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          description: Maximum rows to return (default 1000)
+          schema:
+            type: integer
+            default: 1000
+        - name: offset
+          in: query
+          description: Number of rows to skip
+          schema:
+            type: integer
+            default: 0
+        - name: sort
+          in: query
+          description: Column name to sort by
+          schema:
+            type: string
+        - name: sort_desc
+          in: query
+          description: Sort descending (true/1 for DESC)
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/QueryResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /v1/{db}/query:
+    post:
+      operationId: executeSQL
+      summary: SQL passthrough
+      description: |
+        Executes a read-only SQL query. Only SELECT and WITH (CTE) statements are allowed;
+        anything else returns 403. A TOP N limit is enforced automatically if not present.
+      parameters:
+        - $ref: "#/components/parameters/db"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                sql:
+                  type: string
+                  description: SQL query (SELECT or WITH only)
+                params:
+                  type: array
+                  items: {}
+                  description: Positional parameters for the query
+              required: [sql]
+      responses:
+        "200":
+          description: Query results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: "#/components/schemas/QueryResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Write statement rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  parameters:
+    db:
+      name: db
+      in: path
+      required: true
+      description: Database alias
+      schema:
+        type: string
+
+  schemas:
+    DatabaseInfo:
+      type: object
+      properties:
+        alias:
+          type: string
+        path:
+          type: string
+        status:
+          type: string
+          description: '"ok" or "error: <message>"'
+        modified_at:
+          type: string
+          format: date-time
+          description: File modification time (omitted if stat fails)
+      required: [alias, path, status]
+
+    QueryResult:
+      type: object
+      properties:
+        database:
+          type: string
+        table:
+          type: string
+          description: Present only for table queries, not SQL passthrough
+        count:
+          type: integer
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required: [database, count, rows]
+
+    ErrorEnvelope:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              enum:
+                - not_found
+                - unauthorized
+                - bad_request
+                - forbidden
+                - rate_limited
+                - internal_error
+            message:
+              type: string
+          required: [code, message]
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Database or table not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"

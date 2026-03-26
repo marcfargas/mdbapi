@@ -5,8 +5,10 @@ go 1.26.1
 require (
 	github.com/alexbrainman/odbc v0.0.0-20250601004241-49e6b2bc0cf0
 	github.com/creativeprojects/go-selfupdate v1.5.2
+	github.com/fsnotify/fsnotify v1.9.0
 	github.com/kardianos/service v1.2.4
 	golang.org/x/sys v0.42.0
+	golang.org/x/time v0.15.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 	gopkg.in/yaml.v3 v3.0.1
 	tailscale.com v1.96.1
@@ -36,7 +38,6 @@ require (
 	github.com/creachadair/msync v0.7.1 // indirect
 	github.com/davidmz/go-pageant v1.0.2 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.0 // indirect
 	github.com/gaissmai/bart v0.26.1 // indirect
 	github.com/go-fed/httpsig v1.1.0 // indirect
@@ -79,7 +80,6 @@ require (
 	golang.org/x/sync v0.19.0 // indirect
 	golang.org/x/term v0.38.0 // indirect
 	golang.org/x/text v0.32.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	gvisor.dev/gvisor v0.0.0-20260224225140-573d5e7127a8 // indirect

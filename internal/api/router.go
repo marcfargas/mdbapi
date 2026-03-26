@@ -1,11 +1,36 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"time"
 
+	openapidefs "github.com/marcfargas/mdbapi/api"
 	"github.com/marcfargas/mdbapi/internal/mdb"
+	"gopkg.in/yaml.v3"
 )
+
+// openapiJSON is the spec converted to JSON at init time.
+var openapiJSON []byte
+
+func init() {
+	var raw interface{}
+	if err := yaml.Unmarshal(openapidefs.OpenAPIYAML, &raw); err != nil {
+		panic("openapi: invalid YAML: " + err.Error())
+	}
+	var err error
+	openapiJSON, err = json.Marshal(raw)
+	if err != nil {
+		panic("openapi: JSON marshal: " + err.Error())
+	}
+}
+
+// handleOpenAPI serves the embedded OpenAPI spec as JSON.
+func handleOpenAPI(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	w.Write(openapiJSON)
+}
 
 const authFailDelay = 500 * time.Millisecond
 
@@ -61,6 +86,7 @@ func (s *Server) Handler(cfg HandlerConfig) http.Handler {
 	// Outer mux: public health route + protected API.
 	outer := http.NewServeMux()
 	outer.HandleFunc("GET /v1/health", s.handleHealth)
+	outer.HandleFunc("GET /v1/openapi.json", handleOpenAPI)
 	outer.Handle("/", protected)
 
 	// Build middleware chain (applied bottom-up, so first listed = outermost).
