@@ -15,8 +15,10 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	selfupdate "github.com/creativeprojects/go-selfupdate"
@@ -27,6 +29,7 @@ import (
 type Updater struct {
 	repo          string
 	currentVer    string
+	currentCommit string
 	checkInterval time.Duration
 	token         string
 	channel       string // "release" or "develop"
@@ -36,10 +39,11 @@ type Updater struct {
 
 // New creates an Updater. restartSignal is closed when an update is ready;
 // the caller is responsible for draining in-flight requests and calling os.Exit(1).
-func New(repo, currentVer string, interval time.Duration, token, channel, variant string, restartSignal chan<- struct{}) *Updater {
+func New(repo, currentVer, currentCommit string, interval time.Duration, token, channel, variant string, restartSignal chan<- struct{}) *Updater {
 	return &Updater{
 		repo:          repo,
 		currentVer:    currentVer,
+		currentCommit: currentCommit,
 		checkInterval: interval,
 		token:         token,
 		channel:       channel,
@@ -131,10 +135,11 @@ func (u *Updater) checkRelease(ctx context.Context) {
 }
 
 // checkDevelop downloads the latest CI artifact from the develop branch.
-// It compares the artifact's created_at timestamp against the running binary's
-// modification time to decide whether an update is needed.
+// It compares the artifact's commit SHA against the running binary's commit
+// to decide whether an update is needed, then verifies the downloaded binary
+// matches the expected commit before applying.
 func (u *Updater) checkDevelop(ctx context.Context) {
-	slog.Info("updater: checking develop CI artifacts", "repo", u.repo)
+	slog.Info("updater: checking develop CI artifacts", "repo", u.repo, "current_commit", u.currentCommit)
 
 	exePath, err := os.Executable()
 	if err != nil {
@@ -177,9 +182,11 @@ func (u *Updater) checkDevelop(ctx context.Context) {
 
 	var result struct {
 		Artifacts []struct {
-			Name             string    `json:"name"`
-			CreatedAt        time.Time `json:"created_at"`
-			ArchiveDownloadURL string  `json:"archive_download_url"`
+			Name               string `json:"name"`
+			ArchiveDownloadURL string `json:"archive_download_url"`
+			WorkflowRun        struct {
+				HeadSHA string `json:"head_sha"`
+			} `json:"workflow_run"`
 		} `json:"artifacts"`
 		TotalCount int `json:"total_count"`
 	}
@@ -193,94 +200,57 @@ func (u *Updater) checkDevelop(ctx context.Context) {
 	}
 
 	artifact := result.Artifacts[0]
+	expectedCommit := artifact.WorkflowRun.HeadSHA
 
-	// Compare artifact creation time with current binary modification time.
-	exeInfo, err := os.Stat(exePath)
-	if err != nil {
-		slog.Error("updater: stat executable failed", "err", err)
-		return
-	}
-
-	if !artifact.CreatedAt.After(exeInfo.ModTime()) {
-		slog.Debug("updater: develop build is not newer",
-			"artifact", artifact.CreatedAt.Format(time.RFC3339),
-			"binary", exeInfo.ModTime().Format(time.RFC3339))
+	// Compare commit hashes — skip if already running this commit.
+	if len(expectedCommit) >= 7 && len(u.currentCommit) >= 7 &&
+		expectedCommit[:7] == u.currentCommit[:7] {
+		slog.Debug("updater: already running latest commit", "commit", expectedCommit[:7])
 		return
 	}
 
 	slog.Info("updater: newer develop build available",
-		"artifact", artifact.CreatedAt.Format(time.RFC3339),
-		"binary", exeInfo.ModTime().Format(time.RFC3339))
+		"current_commit", u.currentCommit,
+		"artifact_commit", expectedCommit)
 
 	// Download via nightly.link (no auth required for public repos).
 	nightlyURL := fmt.Sprintf("https://nightly.link/%s/workflows/ci.yml/develop/%s.zip",
 		u.repo, artifactName)
 
-	if err := u.downloadAndApply(ctx, nightlyURL, exePath); err != nil {
+	if err := u.downloadAndVerify(ctx, nightlyURL, exePath, expectedCommit); err != nil {
 		// Fallback to GitHub API (needs token).
 		if u.token == "" {
 			slog.Error("updater: nightly.link failed and no token for GitHub API fallback", "err", err)
 			return
 		}
 		slog.Warn("updater: nightly.link failed, trying GitHub API", "err", err)
-		if err := u.downloadAndApply(ctx, artifact.ArchiveDownloadURL, exePath); err != nil {
+		if err := u.downloadAndVerify(ctx, artifact.ArchiveDownloadURL, exePath, expectedCommit); err != nil {
 			slog.Error("updater: develop update failed", "err", err)
 			return
 		}
 	}
 
-	slog.Info("updater: develop update applied, signalling restart")
+	slog.Info("updater: develop update applied, signalling restart", "commit", expectedCommit)
 	close(u.restartSignal)
 }
 
-// downloadAndApply fetches a zip from url, extracts mdbapi.exe (or mdbapi_tsnet.exe),
-// and replaces the running binary.
-func (u *Updater) downloadAndApply(ctx context.Context, url, exePath string) error {
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return err
-	}
-	if u.token != "" {
-		req.Header.Set("Authorization", "Bearer "+u.token)
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("download: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("download returned %d", resp.StatusCode)
-	}
-
-	// Write zip to temp file.
-	tmpDir, err := os.MkdirTemp("", "mdbapi-update-*")
+// downloadAndVerify downloads, extracts, verifies the commit hash of the
+// downloaded binary, and only then applies the update.
+func (u *Updater) downloadAndVerify(ctx context.Context, url, exePath, expectedCommit string) error {
+	tmpDir, err := u.downloadAndExtract(ctx, url)
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(tmpDir)
 
-	zipPath := filepath.Join(tmpDir, "artifact.zip")
-	f, err := os.Create(zipPath)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		return err
-	}
-	f.Close()
-
-	// Extract the exe from the zip. The tsnet artifact contains mdbapi_tsnet.exe
-	// but the installed binary is mdbapi.exe — try both names.
+	// Find the extracted binary.
 	candidates := []string{"mdbapi.exe"}
 	if u.variant == "tsnet" {
 		candidates = []string{"mdbapi_tsnet.exe", "mdbapi.exe"}
 	}
 	var extracted string
 	for _, name := range candidates {
-		extracted, err = extractFromZip(zipPath, name, tmpDir)
+		extracted, err = extractFromZip(filepath.Join(tmpDir, "artifact.zip"), name, tmpDir)
 		if err == nil {
 			break
 		}
@@ -289,14 +259,32 @@ func (u *Updater) downloadAndApply(ctx context.Context, url, exePath string) err
 		return fmt.Errorf("extract: no matching binary in zip (tried %v)", candidates)
 	}
 
-	// Swap: rename current → .old, copy new → current.
+	// Verify commit hash by running the downloaded binary.
+	if expectedCommit != "" {
+		out, err := exec.CommandContext(ctx, extracted, "version").Output()
+		if err != nil {
+			slog.Warn("updater: could not verify downloaded binary", "err", err)
+			// Proceed anyway — binary may not support version command yet.
+		} else {
+			output := string(out)
+			short := expectedCommit
+			if len(short) > 7 {
+				short = short[:7]
+			}
+			if !strings.Contains(output, short) {
+				return fmt.Errorf("commit mismatch: expected %s, binary reports: %s", short, strings.TrimSpace(output))
+			}
+			slog.Info("updater: downloaded binary commit verified", "commit", short)
+		}
+	}
+
+	// Apply: swap binaries.
 	oldPath := exePath + ".old"
 	_ = os.Remove(oldPath)
 	if err := os.Rename(exePath, oldPath); err != nil {
 		return fmt.Errorf("rename current binary: %w", err)
 	}
 	if err := copyFile(extracted, exePath); err != nil {
-		// Try to restore on failure.
 		_ = os.Rename(oldPath, exePath)
 		return fmt.Errorf("install new binary: %w", err)
 	}
@@ -304,6 +292,48 @@ func (u *Updater) downloadAndApply(ctx context.Context, url, exePath string) err
 
 	return nil
 }
+
+// downloadAndExtract fetches a zip to a temp directory and returns the tmpDir path.
+func (u *Updater) downloadAndExtract(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return "", err
+	}
+	if u.token != "" {
+		req.Header.Set("Authorization", "Bearer "+u.token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("download: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("download returned %d", resp.StatusCode)
+	}
+
+	tmpDir, err := os.MkdirTemp("", "mdbapi-update-*")
+	if err != nil {
+		return "", err
+	}
+
+	zipPath := filepath.Join(tmpDir, "artifact.zip")
+	f, err := os.Create(zipPath)
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		return "", err
+	}
+	if _, err := io.Copy(f, resp.Body); err != nil {
+		f.Close()
+		os.RemoveAll(tmpDir)
+		return "", err
+	}
+	f.Close()
+
+	return tmpDir, nil
+}
+
 
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)

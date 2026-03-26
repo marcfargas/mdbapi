@@ -144,6 +144,7 @@ func (p *Program) run() error {
 		u := updater.New(
 			p.cfg.Updater.GithubRepo,
 			p.version,
+			p.commit,
 			p.cfg.Updater.CheckInterval,
 			p.cfg.Updater.GithubToken,
 			p.cfg.Updater.Channel,
