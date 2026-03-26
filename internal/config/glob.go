@@ -44,7 +44,7 @@ func expandGlobs(entries []DatabaseConfig) ([]DatabaseConfig, error) {
 		}
 
 		// Glob entry — expand to concrete paths.
-		matches, err := matchGlob(entry.Glob)
+		matches, err := MatchGlob(entry.Glob)
 		if err != nil {
 			return nil, fmt.Errorf("glob %q: %w", entry.Glob, err)
 		}
@@ -53,9 +53,9 @@ func expandGlobs(entries []DatabaseConfig) ([]DatabaseConfig, error) {
 			continue
 		}
 
-		base := globBase(entry.Glob)
+		base := GlobBase(entry.Glob)
 		for _, path := range matches {
-			alias, err := aliasFromPath(base, path)
+			alias, err := AliasFromPath(base, path)
 			if err != nil {
 				return nil, fmt.Errorf("glob %q: derive alias for %q: %w", entry.Glob, path, err)
 			}
@@ -72,10 +72,10 @@ func expandGlobs(entries []DatabaseConfig) ([]DatabaseConfig, error) {
 	return result, nil
 }
 
-// matchGlob returns all paths matching pattern.
+// MatchGlob returns all paths matching pattern.
 // Supports both single-level (*) and recursive (**) wildcards.
 // Path separators are normalised to filepath.Separator before matching.
-func matchGlob(pattern string) ([]string, error) {
+func MatchGlob(pattern string) ([]string, error) {
 	pattern = filepath.Clean(pattern)
 
 	if !strings.Contains(pattern, "**") {
@@ -85,7 +85,7 @@ func matchGlob(pattern string) ([]string, error) {
 	// Recursive match: walk from base directory, match the leaf name pattern.
 	// ** matches files in subdirectories only, not the base directory itself.
 	// Use base\*.mdb (single *) to match files directly in the base.
-	base := globBase(pattern)
+	base := GlobBase(pattern)
 	leafPattern := strings.ToLower(filepath.Base(pattern)) // e.g. "*.mdb"
 	absBase, _ := filepath.Abs(base)
 
@@ -115,12 +115,12 @@ func matchGlob(pattern string) ([]string, error) {
 	return matches, err
 }
 
-// globBase returns the longest path prefix before the first wildcard (* or ?).
+// GlobBase returns the longest path prefix before the first wildcard (* or ?).
 //
 //	C:\data\*.mdb       → C:\data
 //	C:\data\**\*.mdb    → C:\data
 //	C:\data\sub\*.mdb   → C:\data\sub
-func globBase(pattern string) string {
+func GlobBase(pattern string) string {
 	pattern = filepath.Clean(pattern)
 	vol := filepath.VolumeName(pattern) // "C:" on Windows, "" on Unix
 	rest := pattern[len(vol):]
@@ -144,12 +144,12 @@ func globBase(pattern string) string {
 	return joined
 }
 
-// aliasFromPath derives a URL-safe, lowercase alias from a matched path.
+// AliasFromPath derives a URL-safe, lowercase alias from a matched path.
 //
 //	base  = C:\data
 //	path  = C:\data\2024\Orders.mdb
 //	→ rel = 2024\Orders.mdb  →  "2024_orders"
-func aliasFromPath(base, path string) (string, error) {
+func AliasFromPath(base, path string) (string, error) {
 	rel, err := filepath.Rel(base, path)
 	if err != nil {
 		return "", err

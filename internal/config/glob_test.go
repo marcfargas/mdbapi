@@ -27,7 +27,7 @@ func makeTempDB(t *testing.T, path string) {
 func TestAliasFromPath_Flat(t *testing.T) {
 	base := filepath.Join("C:", "data")
 	path := filepath.Join(base, "Invoices.mdb")
-	got, err := aliasFromPath(base, path)
+	got, err := AliasFromPath(base, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestAliasFromPath_Flat(t *testing.T) {
 func TestAliasFromPath_Nested(t *testing.T) {
 	base := filepath.Join("C:", "data")
 	path := filepath.Join(base, "2024", "Orders.mdb")
-	got, err := aliasFromPath(base, path)
+	got, err := AliasFromPath(base, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestAliasFromPath_Nested(t *testing.T) {
 func TestAliasFromPath_SpecialChars(t *testing.T) {
 	base := filepath.Join("C:", "data")
 	path := filepath.Join(base, "My DB (v2).mdb")
-	got, err := aliasFromPath(base, path)
+	got, err := AliasFromPath(base, path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,9 +73,9 @@ func TestGlobBase(t *testing.T) {
 		{filepath.Join("C:", "data", "sub", "*.mdb"), filepath.Join("C:", "data", "sub")},
 	}
 	for _, tc := range tests {
-		got := globBase(tc.pattern)
+		got := GlobBase(tc.pattern)
 		if got != tc.want {
-			t.Errorf("globBase(%q) = %q, want %q", tc.pattern, got, tc.want)
+			t.Errorf("GlobBase(%q) = %q, want %q", tc.pattern, got, tc.want)
 		}
 	}
 }
