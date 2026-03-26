@@ -17,7 +17,7 @@ import (
 //   - Float/Double:        float32     → float64
 //   - Currency:            float64     (passed through; 4 decimal precision)
 //   - Date/Time:           time.Time   → RFC3339 string (UTC)
-//   - Text/Memo:           string      (passed through; memo may be truncated at ~32KB by driver)
+//   - Text/Memo:           string/[]byte → string ([]byte text columns converted)
 //   - OLE Object/Binary:   []byte      → base64 string (or null if nil)
 //   - Hyperlink:           string      → stripped of Access # delimiter metadata
 //   - Nil:                 nil         (JSON null)
@@ -56,6 +56,11 @@ func NormalizeValue(col *sql.ColumnType, val interface{}) interface{} {
 		if len(v) == 0 {
 			return nil
 		}
+		// Text/memo columns arrive as []byte via ODBC — convert to string.
+		// Only base64-encode actual binary columns (OLE Object).
+		if col != nil && isTextColumn(col) {
+			return string(v)
+		}
 		return base64.StdEncoding.EncodeToString(v)
 
 	case time.Time:
@@ -68,6 +73,24 @@ func NormalizeValue(col *sql.ColumnType, val interface{}) interface{} {
 		// Fallback: stringify unknown types.
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// isTextColumn returns true when the ODBC column type indicates a text field.
+// Access text and memo columns are reported as VARCHAR/LONGVARCHAR (ANSI) or
+// WVARCHAR/WLONGVARCHAR (Unicode) by the ACE ODBC driver, but the Go driver
+// may deliver their values as []byte rather than string.
+func isTextColumn(col *sql.ColumnType) bool {
+	return isTextTypeName(col.DatabaseTypeName())
+}
+
+// isTextTypeName returns true for ODBC type names that represent text fields.
+func isTextTypeName(typeName string) bool {
+	switch strings.ToUpper(typeName) {
+	case "VARCHAR", "LONGVARCHAR", "WVARCHAR", "WLONGVARCHAR",
+		"CHAR", "WCHAR", "NVARCHAR", "NCHAR", "TEXT", "NTEXT":
+		return true
+	}
+	return false
 }
 
 // isHyperlinkColumn returns true when the column type name suggests a hyperlink.

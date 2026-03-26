@@ -1,6 +1,7 @@
 package mdb
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -70,10 +71,31 @@ func TestNormalizeValue_ZeroTime(t *testing.T) {
 }
 
 func TestNormalizeValue_Binary(t *testing.T) {
+	// Without column metadata, []byte is base64-encoded (assumed binary/OLE).
 	got := NormalizeValue(nil, []byte{0x48, 0x65, 0x6c, 0x6c, 0x6f})
-	// "Hello" in base64
 	if got != "SGVsbG8=" {
 		t.Errorf("NormalizeValue([]byte) = %v, want base64 SGVsbG8=", got)
+	}
+}
+
+func TestIsTextTypeName(t *testing.T) {
+	textTypes := []string{"VARCHAR", "LONGVARCHAR", "WVARCHAR", "WLONGVARCHAR",
+		"CHAR", "WCHAR", "NVARCHAR", "NCHAR", "TEXT", "NTEXT"}
+	for _, typ := range textTypes {
+		if !isTextTypeName(typ) {
+			t.Errorf("isTextTypeName(%q) = false, want true", typ)
+		}
+		// Case insensitive.
+		if !isTextTypeName(strings.ToLower(typ)) {
+			t.Errorf("isTextTypeName(%q) = false, want true", strings.ToLower(typ))
+		}
+	}
+
+	binaryTypes := []string{"BINARY", "VARBINARY", "LONGVARBINARY", "IMAGE", ""}
+	for _, typ := range binaryTypes {
+		if isTextTypeName(typ) {
+			t.Errorf("isTextTypeName(%q) = true, want false", typ)
+		}
 	}
 }
 
