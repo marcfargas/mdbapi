@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
@@ -278,5 +279,36 @@ func TestLoad_GlobWithAliasFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "cannot set both") {
 		t.Errorf("error should mention conflict, got: %v", err)
+	}
+}
+
+func TestLoad_PreservesGlobEntries(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "sub")
+	os.MkdirAll(sub, 0755)
+	os.WriteFile(filepath.Join(sub, "a.mdb"), nil, 0644)
+
+	globPattern := filepath.Join(dir, "**", "*.mdb")
+	cfgYAML := fmt.Sprintf(`
+auth:
+  keys:
+    - "%s"
+databases:
+  - glob: '%s'
+`, strings.Repeat("k", 32), globPattern)
+
+	cfgPath := filepath.Join(dir, "config.yaml")
+	os.WriteFile(cfgPath, []byte(cfgYAML), 0644)
+
+	cfg, err := Load(cfgPath)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	if len(cfg.GlobEntries) != 1 {
+		t.Fatalf("GlobEntries = %d, want 1", len(cfg.GlobEntries))
+	}
+	if cfg.GlobEntries[0].Glob != globPattern {
+		t.Errorf("GlobEntries[0].Glob = %q, want %q", cfg.GlobEntries[0].Glob, globPattern)
 	}
 }

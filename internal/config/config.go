@@ -22,6 +22,10 @@ type Config struct {
 	Tunnel    TunnelConfig     `yaml:"tunnel"`
 	Updater   UpdaterConfig    `yaml:"updater"`
 	API       APIConfig        `yaml:"api"`
+
+	// GlobEntries holds the original glob-type database entries before expansion.
+	// Used by the file watcher to detect new databases at runtime.
+	GlobEntries []DatabaseConfig `yaml:"-"`
 }
 
 type ServiceConfig struct {
@@ -112,6 +116,13 @@ func Load(path string) (*Config, error) {
 	if err := validate(&cfg); err != nil {
 		return nil, err
 	}
+	// Preserve original glob entries for the watcher before expansion replaces them.
+	for _, db := range cfg.Databases {
+		if db.Glob != "" {
+			cfg.GlobEntries = append(cfg.GlobEntries, db)
+		}
+	}
+
 	// Expand glob entries into concrete Alias+Path entries.
 	// This happens after structural validation so glob syntax errors are
 	// reported clearly, separate from structural config errors.
