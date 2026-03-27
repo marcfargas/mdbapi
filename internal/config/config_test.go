@@ -45,8 +45,8 @@ databases:
 	if cfg.API.MaxRows != 1000 {
 		t.Errorf("default max_rows = %d, want 1000", cfg.API.MaxRows)
 	}
-	if cfg.Service.LogMaxSize != 50 {
-		t.Errorf("default log_max_size = %d, want 50", cfg.Service.LogMaxSize)
+	if cfg.Service.LogMaxSize != 5 {
+		t.Errorf("default log_max_size = %d, want 5", cfg.Service.LogMaxSize)
 	}
 	if cfg.Service.LogMaxFiles != 5 {
 		t.Errorf("default log_max_files = %d, want 5", cfg.Service.LogMaxFiles)

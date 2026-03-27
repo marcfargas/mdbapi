@@ -159,7 +159,7 @@ When running as a service, logs go to `C:\ProgramData\MDBService\mdbapi.log` (JS
 ```yaml
 service:
   log_file: 'C:\ProgramData\MDBService\mdbapi.log'
-  log_max_size: 50       # MB — rotate when file exceeds this size
+  log_max_size: 5        # MB — rotate when file exceeds this size
   log_max_files: 5       # number of rotated files to keep
   log_max_age: 30        # days — delete rotated files older than this
   log_compress: true     # gzip rotated log files

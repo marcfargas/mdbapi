@@ -214,7 +214,7 @@ func applyDefaults(cfg *Config) {
 		cfg.Service.LogFile = `C:\ProgramData\MDBService\mdbapi.log`
 	}
 	if cfg.Service.LogMaxSize == 0 {
-		cfg.Service.LogMaxSize = 50 // MB
+		cfg.Service.LogMaxSize = 5 // MB
 	}
 	if cfg.Service.LogMaxFiles == 0 {
 		cfg.Service.LogMaxFiles = 5
