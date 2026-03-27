@@ -33,6 +33,10 @@ type ServiceConfig struct {
 	DisplayName string `yaml:"display_name"`
 	Description string `yaml:"description"`
 	LogFile     string `yaml:"log_file"`
+	LogMaxSize  int    `yaml:"log_max_size"`  // max size in MB before rotation
+	LogMaxFiles int    `yaml:"log_max_files"` // max number of rotated files to keep
+	LogMaxAge   int    `yaml:"log_max_age"`   // max age in days before deletion
+	LogCompress bool   `yaml:"log_compress"`  // gzip rotated files
 }
 
 type ServerConfig struct {
@@ -208,6 +212,15 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Service.LogFile == "" {
 		cfg.Service.LogFile = `C:\ProgramData\MDBService\mdbapi.log`
+	}
+	if cfg.Service.LogMaxSize == 0 {
+		cfg.Service.LogMaxSize = 50 // MB
+	}
+	if cfg.Service.LogMaxFiles == 0 {
+		cfg.Service.LogMaxFiles = 5
+	}
+	if cfg.Service.LogMaxAge == 0 {
+		cfg.Service.LogMaxAge = 30 // days
 	}
 }
 

@@ -45,6 +45,18 @@ databases:
 	if cfg.API.MaxRows != 1000 {
 		t.Errorf("default max_rows = %d, want 1000", cfg.API.MaxRows)
 	}
+	if cfg.Service.LogMaxSize != 50 {
+		t.Errorf("default log_max_size = %d, want 50", cfg.Service.LogMaxSize)
+	}
+	if cfg.Service.LogMaxFiles != 5 {
+		t.Errorf("default log_max_files = %d, want 5", cfg.Service.LogMaxFiles)
+	}
+	if cfg.Service.LogMaxAge != 30 {
+		t.Errorf("default log_max_age = %d, want 30", cfg.Service.LogMaxAge)
+	}
+	if cfg.Service.LogCompress != false {
+		t.Errorf("default log_compress = %v, want false", cfg.Service.LogCompress)
+	}
 }
 
 func TestLoad_EnvSubstitution(t *testing.T) {
@@ -142,6 +154,39 @@ func TestLoad_MissingFile(t *testing.T) {
 	_, err := Load(filepath.Join(t.TempDir(), "nonexistent.yaml"))
 	if err == nil {
 		t.Error("expected error for missing file, got nil")
+	}
+}
+
+func TestLoad_LogRotationExplicit(t *testing.T) {
+	t.Setenv("MDBAPI_KEY", strings.Repeat("a", 32))
+	path := writeTemp(t, `
+auth:
+  keys:
+    - "${MDBAPI_KEY}"
+service:
+  log_max_size: 100
+  log_max_files: 10
+  log_max_age: 7
+  log_compress: true
+databases:
+  - alias: db1
+    path: C:\data\test.mdb
+`)
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	if cfg.Service.LogMaxSize != 100 {
+		t.Errorf("log_max_size = %d, want 100", cfg.Service.LogMaxSize)
+	}
+	if cfg.Service.LogMaxFiles != 10 {
+		t.Errorf("log_max_files = %d, want 10", cfg.Service.LogMaxFiles)
+	}
+	if cfg.Service.LogMaxAge != 7 {
+		t.Errorf("log_max_age = %d, want 7", cfg.Service.LogMaxAge)
+	}
+	if cfg.Service.LogCompress != true {
+		t.Errorf("log_compress = %v, want true", cfg.Service.LogCompress)
 	}
 }
 

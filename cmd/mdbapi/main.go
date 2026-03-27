@@ -87,7 +87,13 @@ func runCmd(args []string) {
 	// In foreground dev mode, leave as stderr (log_file defaults to path but
 	// the operator can clear it for interactive use).
 	if !service.Interactive() {
-		if err := winservice.SetupLogging(cfg.Service.LogFile); err != nil {
+		if err := winservice.SetupLogging(winservice.LogConfig{
+			File:     cfg.Service.LogFile,
+			MaxSize:  cfg.Service.LogMaxSize,
+			MaxFiles: cfg.Service.LogMaxFiles,
+			MaxAge:   cfg.Service.LogMaxAge,
+			Compress: cfg.Service.LogCompress,
+		}); err != nil {
 			fatalf("setup logging: %v", err)
 		}
 	}

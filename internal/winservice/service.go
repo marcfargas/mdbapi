@@ -216,21 +216,30 @@ func cleanupOldBinary() {
 	}
 }
 
+// LogConfig holds the parameters needed to set up file-based logging with rotation.
+type LogConfig struct {
+	File     string
+	MaxSize  int  // MB
+	MaxFiles int  // rotated backups to keep
+	MaxAge   int  // days
+	Compress bool // gzip rotated files
+}
+
 // SetupLogging configures slog to write to the configured log file with rotation.
 // Call this before starting the service loop.
-func SetupLogging(logFile string) error {
-	if logFile == "" {
+func SetupLogging(cfg LogConfig) error {
+	if cfg.File == "" {
 		return nil // keep default stderr
 	}
-	if err := os.MkdirAll(filepath.Dir(logFile), 0700); err != nil {
+	if err := os.MkdirAll(filepath.Dir(cfg.File), 0700); err != nil {
 		return fmt.Errorf("create log directory: %w", err)
 	}
 	w := &lumberjack.Logger{
-		Filename:   logFile,
-		MaxSize:    50, // MB
-		MaxBackups: 5,
-		MaxAge:     30, // days
-		Compress:   true,
+		Filename:   cfg.File,
+		MaxSize:    cfg.MaxSize,
+		MaxBackups: cfg.MaxFiles,
+		MaxAge:     cfg.MaxAge,
+		Compress:   cfg.Compress,
 	}
 	slog.SetDefault(slog.New(slog.NewJSONHandler(w, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
