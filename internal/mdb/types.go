@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // NormalizeValue converts a raw value returned by alexbrainman/odbc into a
@@ -58,7 +59,15 @@ func NormalizeValue(col *sql.ColumnType, val interface{}) interface{} {
 		}
 		// Text/memo columns arrive as []byte via ODBC — convert to string.
 		// Only base64-encode actual binary columns (OLE Object).
+		//
+		// Strategy: first check ODBC type name if available, then fall back
+		// to UTF-8 validity. alexbrainman/odbc does not implement
+		// DatabaseTypeName() (returns ""), so the fallback is the primary
+		// path. Real binary/OLE data is almost never valid UTF-8.
 		if col != nil && isTextColumn(col) {
+			return string(v)
+		}
+		if utf8.Valid(v) {
 			return string(v)
 		}
 		return base64.StdEncoding.EncodeToString(v)

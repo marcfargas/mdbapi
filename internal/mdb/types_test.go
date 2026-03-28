@@ -71,10 +71,26 @@ func TestNormalizeValue_ZeroTime(t *testing.T) {
 }
 
 func TestNormalizeValue_Binary(t *testing.T) {
-	// Without column metadata, []byte is base64-encoded (assumed binary/OLE).
+	// Actual binary data (invalid UTF-8) is base64-encoded.
+	got := NormalizeValue(nil, []byte{0xFF, 0xFE, 0x00, 0x01})
+	if got != "//4AAQ==" {
+		t.Errorf("NormalizeValue(binary []byte) = %v, want base64 //4AAQ==", got)
+	}
+}
+
+func TestNormalizeValue_BytesUTF8(t *testing.T) {
+	// Valid UTF-8 []byte (text from ODBC) is decoded to string.
+	got := NormalizeValue(nil, []byte("MONTAÑES GONZALEZ"))
+	if got != "MONTAÑES GONZALEZ" {
+		t.Errorf("NormalizeValue(utf8 []byte) = %v, want string", got)
+	}
+}
+
+func TestNormalizeValue_BytesASCII(t *testing.T) {
+	// Pure ASCII []byte is also decoded to string.
 	got := NormalizeValue(nil, []byte{0x48, 0x65, 0x6c, 0x6c, 0x6f})
-	if got != "SGVsbG8=" {
-		t.Errorf("NormalizeValue([]byte) = %v, want base64 SGVsbG8=", got)
+	if got != "Hello" {
+		t.Errorf("NormalizeValue(ascii []byte) = %v, want Hello", got)
 	}
 }
 
