@@ -20,6 +20,8 @@ type QueryOpts struct {
 	SortBy string
 	// SortDesc reverses sort order when true.
 	SortDesc bool
+	// TrimWhitespace strips trailing whitespace from string values (default true).
+	TrimWhitespace bool
 }
 
 // QueryResult holds rows and the column names used to build JSON keys.
@@ -86,7 +88,7 @@ func QueryTable(
 	}
 	defer rows.Close()
 
-	return scanRows(rows, opts.Offset)
+	return scanRows(rows, opts.Offset, opts.TrimWhitespace)
 }
 
 // ExecuteSQL runs a raw SQL statement.
@@ -97,6 +99,7 @@ func ExecuteSQL(
 	query string,
 	params []interface{},
 	maxRows int,
+	trim bool,
 ) (*QueryResult, error) {
 	if err := validateReadOnlySQL(query); err != nil {
 		return nil, err
@@ -111,7 +114,7 @@ func ExecuteSQL(
 	}
 	defer rows.Close()
 
-	return scanRows(rows, 0)
+	return scanRows(rows, 0, trim)
 }
 
 // ParseQueryOpts extracts QueryOpts from URL query parameters.
@@ -119,7 +122,8 @@ func ExecuteSQL(
 // are treated as column filters.
 func ParseQueryOpts(q url.Values) QueryOpts {
 	opts := QueryOpts{Filters: make(map[string]string)}
-	reserved := map[string]bool{"limit": true, "offset": true, "sort": true, "sort_desc": true}
+	reserved := map[string]bool{"limit": true, "offset": true, "sort": true, "sort_desc": true, "trim_whitespace": true}
+	opts.TrimWhitespace = true // default on
 
 	for key, vals := range q {
 		if reserved[key] || len(vals) == 0 {
@@ -137,13 +141,16 @@ func ParseQueryOpts(q url.Values) QueryOpts {
 	opts.SortBy = q.Get("sort")
 	opts.SortDesc = strings.EqualFold(q.Get("sort_desc"), "true") ||
 		q.Get("sort_desc") == "1"
+	if v := q.Get("trim_whitespace"); v != "" {
+		opts.TrimWhitespace = strings.EqualFold(v, "true") || v == "1"
+	}
 
 	return opts
 }
 
 // scanRows reads all rows from a sql.Rows into a QueryResult, skipping the
 // first skipN rows (for offset emulation).
-func scanRows(rows *sql.Rows, skipN int) (*QueryResult, error) {
+func scanRows(rows *sql.Rows, skipN int, trim bool) (*QueryResult, error) {
 	colNames, err := rows.Columns()
 	if err != nil {
 		return nil, err
@@ -174,7 +181,13 @@ func scanRows(rows *sql.Rows, skipN int) (*QueryResult, error) {
 		rowMap := make(map[string]interface{}, len(colNames))
 		for i, name := range colNames {
 			raw := *(scanDest[i].(*interface{}))
-			rowMap[name] = NormalizeValue(colTypes[i], raw)
+			v := NormalizeValue(colTypes[i], raw)
+			if trim {
+				if s, ok := v.(string); ok {
+					v = strings.TrimRight(s, " ")
+				}
+			}
+			rowMap[name] = v
 		}
 		result.Rows = append(result.Rows, rowMap)
 	}

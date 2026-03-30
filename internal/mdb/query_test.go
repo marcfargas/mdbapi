@@ -119,10 +119,36 @@ func TestParseQueryOpts(t *testing.T) {
 	if opts.Filters["active"] != "1" {
 		t.Errorf("filter active = %q, want %q", opts.Filters["active"], "1")
 	}
+	if !opts.TrimWhitespace {
+		t.Error("TrimWhitespace should default to true")
+	}
 	// Reserved params must not leak into filters.
-	for _, reserved := range []string{"limit", "offset", "sort", "sort_desc"} {
+	for _, reserved := range []string{"limit", "offset", "sort", "sort_desc", "trim_whitespace"} {
 		if _, ok := opts.Filters[reserved]; ok {
 			t.Errorf("reserved param %q leaked into filters", reserved)
 		}
+	}
+}
+
+func TestParseQueryOpts_TrimWhitespace(t *testing.T) {
+	// Explicit false
+	q := url.Values{"trim_whitespace": []string{"false"}}
+	opts := ParseQueryOpts(q)
+	if opts.TrimWhitespace {
+		t.Error("TrimWhitespace should be false when explicitly set to false")
+	}
+
+	// Explicit true
+	q = url.Values{"trim_whitespace": []string{"true"}}
+	opts = ParseQueryOpts(q)
+	if !opts.TrimWhitespace {
+		t.Error("TrimWhitespace should be true when explicitly set to true")
+	}
+
+	// Not provided — defaults to true
+	q = url.Values{}
+	opts = ParseQueryOpts(q)
+	if !opts.TrimWhitespace {
+		t.Error("TrimWhitespace should default to true when not provided")
 	}
 }

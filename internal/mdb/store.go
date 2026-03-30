@@ -18,7 +18,7 @@ type Store interface {
 	// QueryTable runs a filtered, paginated SELECT against tableName.
 	QueryTable(ctx context.Context, alias, tableName string, opts QueryOpts, maxRows int) (*QueryResult, error)
 	// ExecuteSQL runs a read-only SQL passthrough query.
-	ExecuteSQL(ctx context.Context, alias, query string, params []interface{}, maxRows int) (*QueryResult, error)
+	ExecuteSQL(ctx context.Context, alias, query string, params []interface{}, maxRows int, trim bool) (*QueryResult, error)
 }
 
 // PoolStore implements Store on top of a Pool.
@@ -60,12 +60,12 @@ func (s *PoolStore) QueryTable(ctx context.Context, alias, tableName string, opt
 	return QueryTable(ctx, db, s.cache(alias), tableName, opts, maxRows)
 }
 
-func (s *PoolStore) ExecuteSQL(ctx context.Context, alias, query string, params []interface{}, maxRows int) (*QueryResult, error) {
+func (s *PoolStore) ExecuteSQL(ctx context.Context, alias, query string, params []interface{}, maxRows int, trim bool) (*QueryResult, error) {
 	db, err := s.pool.Get(alias)
 	if err != nil {
 		return nil, err
 	}
-	return ExecuteSQL(ctx, db, query, params, maxRows)
+	return ExecuteSQL(ctx, db, query, params, maxRows, trim)
 }
 
 // cache returns the ColumnCache for an alias, creating it lazily.

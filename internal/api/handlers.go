@@ -77,8 +77,9 @@ func (s *Server) handleExecuteSQL(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SQL    string        `json:"sql"`
-		Params []interface{} `json:"params"`
+		SQL            string        `json:"sql"`
+		Params         []interface{} `json:"params"`
+		TrimWhitespace *bool         `json:"trim_whitespace"`
 	}
 	if err := json.Unmarshal(body, &req); err != nil {
 		badRequest(w, "invalid JSON body")
@@ -89,7 +90,12 @@ func (s *Server) handleExecuteSQL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.store.ExecuteSQL(r.Context(), dbAlias, req.SQL, req.Params, s.maxRows)
+	trim := true // default on
+	if req.TrimWhitespace != nil {
+		trim = *req.TrimWhitespace
+	}
+
+	result, err := s.store.ExecuteSQL(r.Context(), dbAlias, req.SQL, req.Params, s.maxRows, trim)
 	if err != nil {
 		if errors.Is(err, mdb.ErrWriteNotAllowed) {
 			forbidden(w, "only SELECT statements are allowed")

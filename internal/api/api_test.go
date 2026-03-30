@@ -60,7 +60,7 @@ func (m *mockStore) QueryTable(_ context.Context, alias, _ string, _ mdb.QueryOp
 	return &mdb.QueryResult{Columns: []string{}, Rows: []map[string]interface{}{}}, nil
 }
 
-func (m *mockStore) ExecuteSQL(_ context.Context, alias, query string, _ []interface{}, _ int) (*mdb.QueryResult, error) {
+func (m *mockStore) ExecuteSQL(_ context.Context, alias, query string, _ []interface{}, _ int, _ bool) (*mdb.QueryResult, error) {
 	if m.err != nil {
 		return nil, m.err
 	}

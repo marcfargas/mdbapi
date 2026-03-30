@@ -162,6 +162,12 @@ paths:
           schema:
             type: boolean
             default: false
+        - name: trim_whitespace
+          in: query
+          description: Strip trailing whitespace from string values (default true)
+          schema:
+            type: boolean
+            default: true
       responses:
         "200":
           description: Query results
@@ -200,6 +206,10 @@ paths:
                   type: array
                   items: {}
                   description: Positional parameters for the query
+                trim_whitespace:
+                  type: boolean
+                  default: true
+                  description: Strip trailing whitespace from string values
               required: [sql]
       responses:
         "200":
