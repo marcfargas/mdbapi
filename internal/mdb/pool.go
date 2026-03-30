@@ -3,6 +3,7 @@ package mdb
 import (
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"os"
 	"sync"
 	"time"
@@ -43,6 +44,8 @@ type Pool struct {
 
 // NewPool opens ODBC connections for all configured databases.
 // All connections use ReadOnly=1 to prevent exclusive locks.
+// Databases that fail to open are logged and skipped rather than
+// crashing the service — they appear with status "error" in listings.
 func NewPool(dbs []DBConfig) (*Pool, error) {
 	p := &Pool{
 		dbs:      make(map[string]*sql.DB, len(dbs)),
@@ -52,9 +55,10 @@ func NewPool(dbs []DBConfig) (*Pool, error) {
 	for _, cfg := range dbs {
 		db, connStr, err := openDB(cfg.Path, cfg.Driver)
 		if err != nil {
-			// Close any already-opened connections before returning.
-			p.Close()
-			return nil, fmt.Errorf("open database %q (%s): %w", cfg.Alias, cfg.Path, err)
+			slog.Warn("skipping database that failed to open",
+				"alias", cfg.Alias, "path", cfg.Path, "err", err)
+			p.paths[cfg.Alias] = cfg.Path // still list it with error status
+			continue
 		}
 		p.dbs[cfg.Alias] = db
 		p.paths[cfg.Alias] = cfg.Path
@@ -86,8 +90,8 @@ func (p *Pool) Get(alias string) (*sql.DB, error) {
 func (p *Pool) Aliases() []string {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	out := make([]string, 0, len(p.dbs))
-	for alias := range p.dbs {
+	out := make([]string, 0, len(p.paths))
+	for alias := range p.paths {
 		out = append(out, alias)
 	}
 	return out
@@ -99,17 +103,21 @@ func (p *Pool) Aliases() []string {
 func (p *Pool) Databases() []DBInfo {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	out := make([]DBInfo, 0, len(p.dbs))
-	for alias, db := range p.dbs {
+	out := make([]DBInfo, 0, len(p.paths))
+	for alias, path := range p.paths {
 		info := DBInfo{
-			Alias:  alias,
-			Path:   p.paths[alias],
-			Status: "ok",
+			Alias: alias,
+			Path:  path,
 		}
-		if err := db.Ping(); err != nil {
+		db, ok := p.dbs[alias]
+		if !ok {
+			info.Status = "error: failed to open"
+		} else if err := db.Ping(); err != nil {
 			info.Status = "error: " + err.Error()
+		} else {
+			info.Status = "ok"
 		}
-		if fi, err := os.Stat(p.paths[alias]); err == nil {
+		if fi, err := os.Stat(path); err == nil {
 			t := fi.ModTime()
 			info.ModifiedAt = &t
 		}

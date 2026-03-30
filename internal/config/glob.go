@@ -79,7 +79,20 @@ func MatchGlob(pattern string) ([]string, error) {
 	pattern = filepath.Clean(pattern)
 
 	if !strings.Contains(pattern, "**") {
-		return filepath.Glob(pattern)
+		matches, err := filepath.Glob(pattern)
+		if err != nil {
+			log.Printf("config: filepath.Glob(%q) error: %v", pattern, err)
+		} else if len(matches) == 0 {
+			// Log the base directory contents to aid debugging on mapped drives.
+			dir := filepath.Dir(pattern)
+			entries, dirErr := os.ReadDir(dir)
+			if dirErr != nil {
+				log.Printf("config: glob %q matched 0 files; cannot read dir %q: %v", pattern, dir, dirErr)
+			} else {
+				log.Printf("config: glob %q matched 0 files; dir %q has %d entries", pattern, dir, len(entries))
+			}
+		}
+		return matches, err
 	}
 
 	// Recursive match: walk from base directory, match the leaf name pattern.
