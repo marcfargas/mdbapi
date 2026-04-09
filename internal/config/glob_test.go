@@ -219,6 +219,65 @@ func TestExpandGlobs_CollisionAcrossGlobs(t *testing.T) {
 	}
 }
 
+// ─── PathMatchesGlob ────────────────────────────────────────────────────────
+
+func TestPathMatchesGlob_SingleLevel(t *testing.T) {
+	dir := t.TempDir()
+	makeTempDB(t, filepath.Join(dir, "invoices.mdb"))
+	makeTempDB(t, filepath.Join(dir, "readme.txt"))
+
+	pattern := filepath.Join(dir, "*.mdb")
+
+	if !PathMatchesGlob(pattern, filepath.Join(dir, "invoices.mdb")) {
+		t.Error("should match .mdb in same directory")
+	}
+	if PathMatchesGlob(pattern, filepath.Join(dir, "readme.txt")) {
+		t.Error("should not match .txt")
+	}
+	if PathMatchesGlob(pattern, filepath.Join(dir, "sub", "other.mdb")) {
+		t.Error("should not match file in subdirectory for single-level glob")
+	}
+}
+
+func TestPathMatchesGlob_Recursive(t *testing.T) {
+	dir := t.TempDir()
+	makeTempDB(t, filepath.Join(dir, "root.mdb"))
+	makeTempDB(t, filepath.Join(dir, "sub", "child.mdb"))
+	makeTempDB(t, filepath.Join(dir, "sub", "deep", "leaf.mdb"))
+
+	pattern := filepath.Join(dir, "**", "*.mdb")
+
+	if PathMatchesGlob(pattern, filepath.Join(dir, "root.mdb")) {
+		t.Error("** should not match files directly in base")
+	}
+	if !PathMatchesGlob(pattern, filepath.Join(dir, "sub", "child.mdb")) {
+		t.Error("should match file in subdirectory")
+	}
+	if !PathMatchesGlob(pattern, filepath.Join(dir, "sub", "deep", "leaf.mdb")) {
+		t.Error("should match file in nested subdirectory")
+	}
+}
+
+func TestPathMatchesGlob_CaseInsensitive(t *testing.T) {
+	dir := t.TempDir()
+	pattern := filepath.Join(dir, "**", "*.mdb")
+	makeTempDB(t, filepath.Join(dir, "sub", "Data.MDB"))
+
+	if !PathMatchesGlob(pattern, filepath.Join(dir, "sub", "Data.MDB")) {
+		t.Error("should match case-insensitively")
+	}
+}
+
+func TestPathMatchesGlob_OutsideBase(t *testing.T) {
+	dir := t.TempDir()
+	other := t.TempDir()
+	pattern := filepath.Join(dir, "**", "*.mdb")
+
+	if PathMatchesGlob(pattern, filepath.Join(other, "sub", "file.mdb")) {
+		t.Error("should not match path outside glob base directory")
+	}
+}
+
 // ─── Load() integration ──────────────────────────────────────────────────────
 
 func TestLoad_GlobEntry(t *testing.T) {

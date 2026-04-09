@@ -128,6 +128,39 @@ func MatchGlob(pattern string) ([]string, error) {
 	return matches, err
 }
 
+// PathMatchesGlob checks whether a single path matches a glob pattern without
+// walking the filesystem. This is O(1) — no I/O, no directory listing.
+// For ** patterns: verifies path is under base (not IN base) and leaf matches.
+// For simple patterns: uses filepath.Match after cleaning.
+func PathMatchesGlob(pattern, path string) bool {
+	pattern = filepath.Clean(pattern)
+	path = filepath.Clean(path)
+
+	if !strings.Contains(pattern, "**") {
+		ok, err := filepath.Match(strings.ToLower(pattern), strings.ToLower(path))
+		return err == nil && ok
+	}
+
+	// Recursive pattern: base\**\leafPattern
+	base := GlobBase(pattern)
+	leafPattern := strings.ToLower(filepath.Base(pattern)) // e.g. "*.mdb"
+
+	absBase, _ := filepath.Abs(base)
+	absPath, _ := filepath.Abs(path)
+	absDir, _ := filepath.Abs(filepath.Dir(path))
+
+	// Must be under base, not directly in base (** = subdirectories only).
+	if strings.EqualFold(absDir, absBase) {
+		return false
+	}
+	if !strings.HasPrefix(strings.ToLower(absPath), strings.ToLower(absBase)+strings.ToLower(string(filepath.Separator))) {
+		return false
+	}
+
+	ok, err := filepath.Match(leafPattern, strings.ToLower(filepath.Base(path)))
+	return err == nil && ok
+}
+
 // GlobBase returns the longest path prefix before the first wildcard (* or ?).
 //
 //	C:\data\*.mdb       → C:\data
