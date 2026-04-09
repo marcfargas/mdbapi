@@ -133,8 +133,8 @@ func TestWatcher_PollBackoff_IncreasesWhenIdle(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	cancel()
 
-	if w.currPollIvl <= w.basePollIvl {
-		t.Errorf("expected poll interval to back off, got currPollIvl=%v basePollIvl=%v", w.currPollIvl, w.basePollIvl)
+	if w.PollInterval() <= 50*time.Millisecond {
+		t.Errorf("expected poll interval to back off, got currPollIvl=%v basePollIvl=%v", w.PollInterval(), 50*time.Millisecond)
 	}
 }
 
@@ -155,7 +155,7 @@ func TestWatcher_PollBackoff_ResetsOnDiscovery(t *testing.T) {
 
 	// Let it back off with empty dir.
 	time.Sleep(200 * time.Millisecond)
-	if w.currPollIvl <= w.basePollIvl {
+	if w.PollInterval() <= 50*time.Millisecond {
 		t.Fatal("expected backoff before adding file")
 	}
 
@@ -175,8 +175,8 @@ func TestWatcher_PollBackoff_ResetsOnDiscovery(t *testing.T) {
 		}
 		if len(reg.Registered()) >= 1 {
 			// Check immediately — the poll that found the file also reset the interval.
-			if w.currPollIvl != w.basePollIvl {
-				t.Errorf("expected poll interval to reset to base after discovery, got %v", w.currPollIvl)
+			if w.PollInterval() != 50*time.Millisecond {
+				t.Errorf("expected poll interval to reset to base after discovery, got %v", w.PollInterval())
 			}
 			return
 		}

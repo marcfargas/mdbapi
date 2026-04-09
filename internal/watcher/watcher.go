@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
@@ -36,11 +37,19 @@ const (
 
 // Watcher watches for new database files matching configured glob patterns.
 type Watcher struct {
-	globs      []globEntry
-	reg        Registrar
+	globs       []globEntry
+	reg         Registrar
 	basePollIvl time.Duration
+	mu          sync.Mutex     // protects currPollIvl
 	currPollIvl time.Duration
-	fsw        *fsnotify.Watcher
+	fsw         *fsnotify.Watcher
+}
+
+// PollInterval returns the current poll interval (thread-safe).
+func (w *Watcher) PollInterval() time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.currPollIvl
 }
 
 // New creates a Watcher. Pass only the glob-type DatabaseConfig entries.
@@ -93,6 +102,7 @@ func (w *Watcher) Run(ctx context.Context) {
 			return
 		case <-ticker.C:
 			found := w.poll()
+			w.mu.Lock()
 			if found > 0 {
 				w.currPollIvl = w.basePollIvl
 			} else if w.currPollIvl < maxPollBackoff {
@@ -102,6 +112,7 @@ func (w *Watcher) Run(ctx context.Context) {
 				}
 			}
 			ticker.Reset(w.currPollIvl)
+			w.mu.Unlock()
 		}
 	}
 }
